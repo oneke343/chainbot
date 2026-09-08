@@ -4,6 +4,7 @@ import { getMonitorState, setMonitorState } from "../../../chain_sentinel/lib/mo
 import {
   defineHealthPositionAdapter, evaluatePositionHealth, renderPositionHealthMessages,
   type HealthInputs, type PositionHealthStates, type PositionMessagePolicy, type PositionRiskRule,
+  type PositionRiskOptions, type PositionStressRule,
 } from "../../../chain_sentinel/lib/health-factor.ts";
 
 type SparkSource = {
@@ -59,9 +60,13 @@ export function evaluateSparkHealth(
   market_thresholds: Record<string, number | string> = {},
   previous_states: unknown = {},
   risk_rules: PositionRiskRule[] = [],
+  stress_rules: PositionStressRule[] = [],
+  risk_options: PositionRiskOptions = {},
   message_policy: PositionMessagePolicy = {},
 ) {
-  const inspection = evaluatePositionHealth(inputs, default_threshold, market_thresholds, previous_states, risk_rules);
+  const inspection = evaluatePositionHealth(
+    inputs, default_threshold, market_thresholds, previous_states, risk_rules, stress_rules, risk_options,
+  );
   const messages = renderPositionHealthMessages("SparkLend", inputs.user, inputs.observed_at, inspection.triggered_findings, message_policy);
   const output: RT.MonitorOutput = {
     matched: messages.length > 0,
@@ -103,13 +108,25 @@ export async function main(
     threshold_percent: number;
     window_minutes?: number;
     min_debt_usd?: number;
+    rearm_percent?: number;
   }> = [],
+  stress_rules: Array<{
+    id: string;
+    collateral_change_percent: number;
+    debt_change_percent?: number;
+    threshold: number;
+    min_debt_usd?: number;
+  }> = [],
+  risk_options: { rearm_health_factor_margin?: number; repeat_interval_minutes?: number } = {},
   message_policy: { max_messages?: number; overflow?: "summary" | "truncate" } = {},
 ): Promise<RT.MonitorOutput> {
   const normalized = sparkHealthAdapter.normalize(inputs, { user, chain_ids });
-  evaluateSparkHealth(normalized, default_threshold, market_thresholds, {}, risk_rules, message_policy);
+  evaluateSparkHealth(normalized, default_threshold, market_thresholds, {}, risk_rules, stress_rules, risk_options, message_policy);
   const previous = await getMonitorState<SparkSource, PositionHealthStates>();
-  const { states, output } = evaluateSparkHealth(normalized, default_threshold, market_thresholds, previous.states, risk_rules, message_policy);
+  const { states, output } = evaluateSparkHealth(
+    normalized, default_threshold, market_thresholds, previous.states,
+    risk_rules, stress_rules, risk_options, message_policy,
+  );
   await setMonitorState(inputs, states, output);
   return output;
 }

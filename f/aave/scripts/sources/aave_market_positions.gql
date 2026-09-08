@@ -1,6 +1,7 @@
 query AaveMarketPositions($user: EvmAddress!, $chainIds: [ChainId!]!) {
   markets(request: { chainIds: $chainIds, user: $user }) {
     name
+    address
     chain {
       chainId
       name

@@ -1,0 +1,26 @@
+query AaveV3UserLiquidations(
+  $user: EvmAddress!
+  $market: EvmAddress!
+  $chain_id: ChainId!
+) {
+  userTransactionHistory(request: {
+    market: $market
+    filter: [LIQUIDATION_CALL]
+    orderBy: {date: DESC}
+    user: $user
+    chainId: $chain_id
+    pageSize: FIFTY
+  }) {
+    items {
+      __typename
+      ... on UserLiquidationCallTransaction {
+        txHash
+        timestamp
+        blockExplorerUrl
+        collateral {reserve {underlyingToken {symbol}} amount {amount {value} usd}}
+        debtRepaid {reserve {underlyingToken {symbol}} amount {amount {value} usd}}
+      }
+    }
+    pageInfo {next}
+  }
+}

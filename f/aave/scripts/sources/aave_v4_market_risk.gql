@@ -1,0 +1,11 @@
+query AaveV4MarketRisk($chain_ids: [ChainId!]!) {
+  spokes(request: {query: {chainIds: $chain_ids}}) {
+    id name address chain {chainId name}
+    summary(currency: USD) {
+      totalBorrowed {value}
+      totalBorrowCap {value}
+      totalSupplied {value}
+      totalSupplyCap {value}
+    }
+  }
+}

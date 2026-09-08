@@ -1,0 +1,22 @@
+query MorphoMarketRisk($market_ids: [String!]!, $chain_ids: [Int!]) {
+  markets(first: 1000, skip: 0, where: {uniqueKey_in: $market_ids, chainId_in: $chain_ids}) {
+    items {
+      marketId
+      chain {id network}
+      loanAsset {symbol}
+      collateralAsset {symbol}
+      state {liquidityAssetsUsd utilization}
+      badDebt {usd}
+      realizedBadDebt {usd}
+      warnings {
+        type level
+        metadata {
+          ... on OraclePriceDerivationMarketWarningMetadata {deviationFactor}
+          ... on BadDebtRealizedMarketWarningMetadata {badDebtUsd}
+          ... on BadDebtUnrealizedMarketWarningMetadata {badDebtUsd}
+        }
+      }
+    }
+    pageInfo {count countTotal limit skip}
+  }
+}

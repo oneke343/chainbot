@@ -1,0 +1,22 @@
+query AaveV4UserLiquidations($user: EvmAddress!, $chain_ids: [ChainId!]!) {
+  activities(request: {
+    query: {chainIds: $chain_ids}
+    user: $user
+    types: [LIQUIDATED]
+    pageSize: FIFTY
+  }) {
+    items {
+      __typename
+      ... on LiquidatedActivity {
+        id user timestamp txHash liquidationHealthFactor
+        chain {chainId name}
+        spoke {address name}
+        collateralReserve {asset {underlying {info {symbol}}}}
+        debtReserve {asset {underlying {info {symbol}}}}
+        collateral {amount {value} token {info {symbol}}}
+        debt {amount {value} token {info {symbol}}}
+      }
+    }
+    pageInfo {next}
+  }
+}

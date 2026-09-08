@@ -4,7 +4,8 @@ import { getMonitorState, setMonitorState } from "../../../chain_sentinel/lib/mo
 import {
   defineHealthPositionAdapter, evaluatePositionHealth, renderPositionHealthMessages, selectChains,
   validateUserAndChains, type HealthInputs, type PositionHealthStates,
-  type PositionMessagePolicy, type PositionRiskRule,
+  type PositionMessagePolicy, type PositionRiskRule, type PositionRiskOptions,
+  type PositionStressRule,
 } from "../../../chain_sentinel/lib/health-factor.ts";
 
 type MorphoData = {
@@ -83,10 +84,12 @@ export function evaluateMorphoHealth(
   market_thresholds: Record<string, number | string> = {},
   previous_states: unknown = {},
   risk_rules: PositionRiskRule[] = [],
+  stress_rules: PositionStressRule[] = [],
+  risk_options: PositionRiskOptions = {},
   message_policy: PositionMessagePolicy = {},
 ) {
   const inspection = evaluatePositionHealth(
-    inputs, default_threshold, market_thresholds, previous_states, risk_rules,
+    inputs, default_threshold, market_thresholds, previous_states, risk_rules, stress_rules, risk_options,
   );
   const states = inspection.states;
   const messages = renderPositionHealthMessages(
@@ -121,14 +124,23 @@ export async function main(
     threshold_percent: number;
     window_minutes?: number;
     min_debt_usd?: number;
+    rearm_percent?: number;
   }> = [],
+  stress_rules: Array<{
+    id: string;
+    collateral_change_percent: number;
+    debt_change_percent?: number;
+    threshold: number;
+    min_debt_usd?: number;
+  }> = [],
+  risk_options: { rearm_health_factor_margin?: number; repeat_interval_minutes?: number } = {},
   message_policy: { max_messages?: number; overflow?: "summary" | "truncate" } = {},
 ): Promise<RT.MonitorOutput> {
   const normalized = morphoHealthAdapter.normalize(inputs, { user, chain_ids });
-  evaluateMorphoHealth(normalized, default_threshold, market_thresholds, {}, risk_rules, message_policy);
+  evaluateMorphoHealth(normalized, default_threshold, market_thresholds, {}, risk_rules, stress_rules, risk_options, message_policy);
   const previous = await getMonitorState<Record<string, unknown>, PositionHealthStates>();
   const { states, output } = evaluateMorphoHealth(
-    normalized, default_threshold, market_thresholds, previous.states, risk_rules, message_policy,
+    normalized, default_threshold, market_thresholds, previous.states, risk_rules, stress_rules, risk_options, message_policy,
   );
   await setMonitorState(inputs, states, output);
   return output;

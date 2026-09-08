@@ -211,16 +211,19 @@ test("Aave Rules evaluate configured markets from current Source inputs", async 
       markets: [
         {
           name: "Ethereum Core",
+          address: `0x${"1".repeat(40)}`,
           chain: { chainId: 1, name: "Ethereum" },
           userState: { healthFactor: "1.04", totalDebtBase: "100", totalCollateralBase: "150" },
         },
         {
           name: "Base Core",
+          address: `0x${"2".repeat(40)}`,
           chain: { chainId: 8453, name: "Base" },
           userState: { healthFactor: null },
         },
         {
           name: "Not Configured",
+          address: `0x${"3".repeat(40)}`,
           chain: { chainId: 10, name: "OP Mainnet" },
           userState: { healthFactor: "0.5" },
         },
@@ -230,7 +233,7 @@ test("Aave Rules evaluate configured markets from current Source inputs", async 
 
   const result = await evaluateAaveHealth(
     inputs,
-    "0xuser",
+    `0x${"4".repeat(40)}`,
     { "Ethereum Core": 1.1, "Base Core": 1.05, Missing: 1.2 },
   );
 
@@ -244,7 +247,15 @@ test("Aave Rules evaluate configured markets from current Source inputs", async 
   assert.equal(result.output.messages?.length, 1);
   assert.equal(result.output.messages[0].title, "Aave V3 position risk: health_factor_threshold");
   assert.match(result.output.messages[0].description, /HF threshold: 1\.1/);
-  assert.equal(result.output.messages[0].fields?.finding_id, "health_factor:1:ethereum core");
+  assert.equal(result.output.messages[0].fields?.finding_id, `health_factor:1:0x${"1".repeat(40)}`);
+
+  const withDefault = evaluateAaveHealth(
+    inputs, `0x${"4".repeat(40)}`, { "Ethereum Core": 1.1 }, 1,
+  );
+  assert.deepEqual(
+    (withDefault.output.fields.positions as Array<{ market_name: string }>).map((item) => item.market_name),
+    ["Not Configured", "Ethereum Core"],
+  );
 });
 
 test("Binance Source keeps only fresh closed one-minute klines", () => {

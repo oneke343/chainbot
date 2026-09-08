@@ -133,10 +133,11 @@ type AaveHealthOutput = {
 };
 ```
 
-通用 Position Risk Engine 支持四类 OR 关系风险信号：当前 HF 低于市场阈值、窗口内 HF
-下降百分比、窗口内债务增长百分比，以及由 `1 - 1/HF` 估算的抵押品价格下跌清算缓冲。
+通用 Position Risk Engine 支持五类 OR 关系风险信号：当前 HF 低于市场阈值、窗口内 HF
+下降百分比、窗口内债务增长百分比、由 `1 - 1/HF` 估算的清算缓冲，以及可配置的统一压力场景。
 趋势首次执行只建立基线；达到窗口后才判断。历史按分钟去重，最长窗口限制为 1440 分钟。
-每个“规则 × 仓位”独立保存 active 状态，持续命中不重复发送，恢复后可以再次触发。
+每个“规则 × 仓位”独立保存 active 状态。`risk_options` 支持 HF 恢复迟滞和定时重复提醒；
+趋势规则支持 `rearm_percent`。历史按实际时间戳取窗口基线且每个仓位硬限制 120 个样本。
 
 `message_policy.max_messages` 限制一次运行最多返回 1 到 100 条消息，默认 20；溢出策略
 `summary` 会保留前面的明细并用最后一条汇总其余 finding，`truncate` 则只截断。完整仓位和
@@ -158,14 +159,43 @@ risk_rules:
   - id: liquidation_buffer_15
     kind: liquidation_buffer
     threshold_percent: 15
+stress_rules:
+  - id: collateral_down_10
+    collateral_change_percent: -10
+    debt_change_percent: 0
+    threshold: 1.05
+risk_options:
+  rearm_health_factor_margin: 0.05
+  repeat_interval_minutes: 60
 message_policy:
   max_messages: 20
   overflow: summary
 ```
 
-这些数值只是配置结构示例，没有自动写入现有生产实例；具体阈值应由用户按账户风险偏好设置。
+`u/oneke` 的三个仓位实例已经启用 5/30 分钟 HF 下降、5/30/60 分钟债务增长和 -10% 抵押品
+压力场景；这些是起始阈值，仍应按账户风险偏好调整。
 `liquidation_buffer` 是假设其他条件不变时由 HF 推导的抵押品价格下跌缓冲估算，不是完整的
-多资产压力测试。
+多资产压力测试。`stress_rules` 使用
+`stressedHF = currentHF × (1 + collateralChange) ÷ (1 + debtChange)`；Morpho 单抵押品市场含义较清晰，
+Aave 组合仓位仍是统一冲击近似值，输出会标记 `approximate: true`。
+
+## 清算事件与 Market Risk
+
+第二轮新增六个可复用 Monitor Flow，仍然只运行 Sources 和 Rules：
+
+- `f/aave/flows/aave_v3_liquidations`、`aave_v4_liquidations` 与
+  `f/morpho/flows/morpho_liquidations` 查询协议确认的清算事件。
+- `f/aave/flows/aave_v3_market_risk` 监控 reserve 流动性、利用率、Supply/Borrow Cap 和暂停/冻结。
+- `f/aave/flows/aave_v4_market_risk` 监控 Spoke 流动性、利用率与聚合 Cap。
+- `f/morpho/flows/morpho_market_risk` 监控 Oracle warnings、已实现/未实现坏账、流动性和利用率。
+
+清算 Monitor 首次运行默认只建立基线；随后使用稳定事件 ID 去重。Morpho 同时保存
+`chainId + txHash + logIndex` 和每链最新 block；若返回页与旧游标不再重叠则失败，避免静默漏事件。
+Aave API 没有在这些查询中提供 block/log index，因此使用协议活动 ID 或交易哈希及分页重叠保护。
+
+Position、Liquidation 和 Market Risk 都会写 `{ROOT_FLOW_PATH}/__monitor_state`，必须分别放在独立
+Root Flow 中，不能把多个有状态 Monitor 子 Flow 串在同一 Root Flow 下。Root Flow 再统一接
+AlertPolicy 和批量 Destination。
 
 ## 通用 AlertPolicy
 
@@ -208,7 +238,9 @@ f/
       sources/           # 通用 Sources
     lib/
       destination-batch.ts # Destination 内部的有界批量投递
-      health-factor.ts  # Adapter 契约、统一仓位风险规则和历史状态
+      health-factor.ts     # Adapter 契约、统一仓位风险规则和历史状态
+      liquidation-events.ts # 清算事件游标、去重和消息
+      market-risk.ts       # Oracle、坏账、流动性、利用率与 Cap 状态机
       monitor-state.ts   # get/set MonitorState 等共享函数与类型
       render-message.ts  # 使用 Monitor inputs + states 渲染 Monitor 自有模板
     resource_types/      # chain_sentinel 拥有的 Resource Type 定义
@@ -223,8 +255,8 @@ f/
       sources/            # 已关闭的 1 分钟现货 K 线
       rules/              # 百分比变化、OR、去重与恢复
   spark/                  # SparkLend RPC Source、Adapter、Rule 和 Monitor Flow
-    flows/                # 两节点 Binance Monitor Flow
-    resources/            # 公共 Market Data HTTP Resource
+    flows/                # 两节点 SparkLend Monitor Flow
+    resources/            # SparkLend Pool/RPC Resource
 ```
 
 `lib` 中的 `.script.yaml` / `.script.lock` 是 `wmill generate-metadata` 为同步和依赖解析生成的

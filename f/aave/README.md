@@ -1,6 +1,7 @@
 # Aave monitors
 
-V3 保留 `flows/aave_health__flow`，不改变已有配置和行为。
+V3 保留 `flows/aave_health__flow`，并增加可选 `default_threshold`；未提供时保持只监控显式
+`market_thresholds` 的兼容行为，提供后所有借款部署自动使用默认值。
 V4 使用 `flows/aave_v4_health__flow`，按用户在每个 Spoke 的整体账户监控 HF。
 
 ## V4 参数
@@ -77,7 +78,18 @@ Aave V3/V4 都显式实现 `HealthPositionAdapter`。未来其他协议接入时
 3. 转换成通用 `HealthInputs`；
 4. 调用通用 HF 状态机并渲染协议名称。
 
-阈值覆盖、HF 下降、债务增长、清算缓冲、rearm 和消息上限保持在 `chain_sentinel`。
+阈值覆盖、HF 下降、债务增长、清算缓冲、统一压力场景、rearm 和消息上限保持在 `chain_sentinel`。
+
+## 第二轮 Flows
+
+- `aave_v3_liquidations` 按 V3 Pool 地址、chain ID 和用户查询最近 50 条真实 liquidation call。
+- `aave_v4_liquidations` 一次查询指定网络上某用户最近 50 条 `LIQUIDATED` activity。
+- `aave_v3_market_risk` 查询各 reserve 的可用流动性、利用率、Supply/Borrow Cap、冻结和暂停。
+- `aave_v4_market_risk` 查询 Spoke 的 USD supplied/borrowed 和聚合 Supply/Borrow Cap。
+
+清算 Flow 首次运行默认只建立基线，避免安装后补发全部历史记录。Aave V3 API 的历史接口要求
+单个 Pool 地址，因此一个 V3 清算 Monitor 实例对应一个部署。Aave V3/V4 当前公开响应没有足够的
+Oracle 更新时间/独立参考价或统一坏账字段；本轮不会把缺失值当 0，也不会伪造这两类判断。
 
 状态位于 `{ROOT_FLOW_PATH}/__monitor_state`。不同用户、不同协议实例必须使用不同根 Flow，
 不要把两个会保存状态的 Monitor 子 Flow 塞入同一根 Flow；避免同一根 Flow 并发写入。

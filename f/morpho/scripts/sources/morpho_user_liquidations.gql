@@ -1,0 +1,22 @@
+query MorphoUserLiquidations($user: String!, $chain_ids: [Int!]) {
+  marketTransactions(
+    first: 1000
+    skip: 0
+    orderBy: Timestamp
+    orderDirection: Desc
+    where: {userAddress_in: [$user], chainId_in: $chain_ids, type_in: [Liquidation]}
+  ) {
+    items {
+      chain {id network}
+      txHash timestamp blockNumber logIndex type
+      user {address}
+      market {marketId loanAsset {symbol} collateralAsset {symbol}}
+      data {
+        ... on MarketTransactionLiquidationData {
+          repaidAssets seizedAssets badDebtAssets liquidator
+        }
+      }
+    }
+    pageInfo {count countTotal limit skip}
+  }
+}

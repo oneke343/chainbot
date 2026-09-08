@@ -1,0 +1,9 @@
+summary: Shared liquidation event deduplication and cursor helpers
+description: Import-only helpers used by protocol liquidation Rules.
+lock: '!inline f/chain_sentinel/lib/liquidation-events.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

@@ -84,11 +84,34 @@ schema:
           min_debt_usd:
             type: number
             minimum: 0
+          rearm_percent:
+            type: number
+            minimum: 0
         required:
           - id
           - kind
           - threshold_percent
       originalType: record[]
+    stress_rules:
+      type: array
+      default: []
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
+          collateral_change_percent: {type: number, exclusiveMinimum: -100}
+          debt_change_percent: {type: number, exclusiveMinimum: -100}
+          threshold: {type: number, exclusiveMinimum: 0}
+          min_debt_usd: {type: number, minimum: 0}
+        required: [id, collateral_change_percent, threshold]
+    risk_options:
+      type: object
+      default: {}
+      additionalProperties: false
+      properties:
+        rearm_health_factor_margin: {type: number, minimum: 0}
+        repeat_interval_minutes: {type: number, minimum: 0}
     user:
       type: string
       description: ''

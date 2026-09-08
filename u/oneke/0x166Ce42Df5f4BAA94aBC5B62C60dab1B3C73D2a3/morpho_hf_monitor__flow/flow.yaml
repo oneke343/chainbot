@@ -24,6 +24,12 @@ value:
           risk_rules:
             type: javascript
             expr: flow_input.risk_rules ?? []
+          stress_rules:
+            type: javascript
+            expr: flow_input.stress_rules ?? []
+          risk_options:
+            type: javascript
+            expr: flow_input.risk_options ?? {}
           message_policy:
             type: javascript
             expr: flow_input.message_policy ?? {}
@@ -117,6 +123,8 @@ schema:
     - market_thresholds
     - chain_ids
     - risk_rules
+    - stress_rules
+    - risk_options
     - message_policy
     - severity
     - telegram_auth
@@ -164,7 +172,28 @@ schema:
           threshold_percent: {type: number, exclusiveMinimum: 0}
           window_minutes: {type: integer, minimum: 1, maximum: 1440}
           min_debt_usd: {type: number, minimum: 0}
+          rearm_percent: {type: number, minimum: 0}
         required: [id, kind, threshold_percent]
+    stress_rules:
+      type: array
+      default: []
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
+          collateral_change_percent: {type: number, exclusiveMinimum: -100}
+          debt_change_percent: {type: number, exclusiveMinimum: -100}
+          threshold: {type: number, exclusiveMinimum: 0}
+          min_debt_usd: {type: number, minimum: 0}
+        required: [id, collateral_change_percent, threshold]
+    risk_options:
+      type: object
+      additionalProperties: false
+      default: {rearm_health_factor_margin: 0.05, repeat_interval_minutes: 60}
+      properties:
+        rearm_health_factor_margin: {type: number, minimum: 0}
+        repeat_interval_minutes: {type: number, minimum: 0}
     message_policy:
       type: object
       additionalProperties: false

@@ -68,8 +68,8 @@ Aave V4 要先发现主网再查仓位，因此是三个节点；Morpho 仍是�
 Trigger、severity 和 destination 在根 Flow 中选择。AlertPolicy 可以返回多条 AlertMessage，
 Root Flow 将整个数组传给批量 Destination；仓位状态去重发生在 Rule 中。
 
-Morpho Adapter 还向通用引擎提供 `borrowAssetsUsd`，可配置 `health_factor_drop`、`debt_growth`
-和 `liquidation_buffer` 风险规则。趋势状态按分钟保存，最多覆盖 1440 分钟窗口；消息默认最多
+Morpho Adapter 还向通用引擎提供 `borrowAssetsUsd`，可配置 `health_factor_drop`、`debt_growth`、
+`liquidation_buffer` 和统一压力场景。趋势状态按分钟保存，最多覆盖 1440 分钟窗口；消息默认最多
 20 条，溢出时由 `message_policy` 决定汇总或截断。
 
 Rule 写入 `{ROOT_FLOW_PATH}/__monitor_state`，所以 Aave、Morpho 和不同用户应使用不同根 Flow，
@@ -88,3 +88,19 @@ API：<https://api.morpho.org/graphql>；
 `wmill script preview f/morpho/scripts/sources/morpho_user_positions.gql -d '<JSON 参数>'`。
 完整 `wmill flow preview f/morpho/flows/morpho_health -d '<JSON 参数>'` 会写状态，不会部署；
 请使用独立测试实例。
+
+## 清算与市场风险
+
+`flows/morpho_liquidations__flow` 一次查询最多 1000 条真实 `Liquidation` transaction，使用
+`chainId + txHash + logIndex` 去重并保存每链最新 block。首次执行默认只建立基线；分页不完整或
+无法和旧游标重叠时拒绝保存状态。
+
+`flows/morpho_market_risk__flow` 按明确的 `market_ids` 查询市场快照。第一版支持：
+
+- `oracle_unusable`、`oracle_price_derivation` 等 API warning；
+- 当前 `badDebt`，并保留 API 的 realized/unrealized bad-debt warning；
+- `liquidityAssetsUsd`；
+- `utilization`。
+
+每个指标都通过 `default_rules` 或 `market_rules` 设置阈值。Source 必须完整返回全部配置市场，
+否则 Rule 失败且不覆盖上一份有效状态。

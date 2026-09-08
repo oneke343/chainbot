@@ -45,6 +45,20 @@ export type PositionRiskRule = {
   threshold_percent: number;
   window_minutes?: number;
   min_debt_usd?: number;
+  rearm_percent?: number;
+};
+
+export type PositionStressRule = {
+  id: string;
+  collateral_change_percent: number;
+  debt_change_percent?: number;
+  threshold: number;
+  min_debt_usd?: number;
+};
+
+export type PositionRiskOptions = {
+  rearm_health_factor_margin?: number;
+  repeat_interval_minutes?: number;
 };
 
 export type PositionMessagePolicy = {
@@ -63,6 +77,7 @@ export type PositionHealthSignalState = {
   active: boolean;
   activated_at?: string;
   last_health_factor: string;
+  last_notified_at?: string;
 };
 
 export type PositionHealthStates = {
@@ -76,7 +91,7 @@ export type PositionHealthStates = {
 
 export type PositionHealthFinding = {
   id: string;
-  kind: "health_factor" | PositionRiskRule["kind"];
+  kind: "health_factor" | "stress_health_factor" | PositionRiskRule["kind"];
   rule_id: string;
   position_id: string;
   market: string;
@@ -85,6 +100,9 @@ export type PositionHealthFinding = {
   value: string;
   window_minutes?: number;
   baseline?: string;
+  approximate?: boolean;
+  collateral_change_percent?: number;
+  debt_change_percent?: number;
   newly_triggered: boolean;
   active: boolean;
 };
@@ -227,6 +245,35 @@ function validateRiskRules(rules: PositionRiskRule[]): void {
     if (rule.min_debt_usd !== undefined && (!Number.isFinite(rule.min_debt_usd) || rule.min_debt_usd < 0)) {
       throw new Error(`min_debt_usd for ${rule.id} must be non-negative`);
     }
+    if (rule.rearm_percent !== undefined && (!Number.isFinite(rule.rearm_percent)
+      || rule.rearm_percent < 0 || rule.rearm_percent >= rule.threshold_percent)) {
+      throw new Error(`rearm_percent for ${rule.id} must be non-negative and below threshold_percent`);
+    }
+  }
+}
+
+function validateStressRules(rules: PositionStressRule[]): void {
+  if (!Array.isArray(rules)) throw new Error("stress_rules must be an array");
+  const ids = new Set<string>();
+  for (const rule of rules) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(rule.id) || ids.has(rule.id)) {
+      throw new Error("stress_rules require unique valid IDs");
+    }
+    ids.add(rule.id);
+    if (!Number.isFinite(rule.collateral_change_percent)
+      || rule.collateral_change_percent <= -100) {
+      throw new Error(`collateral_change_percent for ${rule.id} must be greater than -100`);
+    }
+    if (rule.debt_change_percent !== undefined && (!Number.isFinite(rule.debt_change_percent)
+      || rule.debt_change_percent <= -100)) {
+      throw new Error(`debt_change_percent for ${rule.id} must be greater than -100`);
+    }
+    if (!Number.isFinite(rule.threshold) || rule.threshold <= 0) {
+      throw new Error(`threshold for ${rule.id} must be positive`);
+    }
+    if (rule.min_debt_usd !== undefined && (!Number.isFinite(rule.min_debt_usd) || rule.min_debt_usd < 0)) {
+      throw new Error(`min_debt_usd for ${rule.id} must be non-negative`);
+    }
   }
 }
 
@@ -244,15 +291,24 @@ function transitionFinding(
   fingerprint: string,
   observedAt: string,
   old: PositionHealthSignalState | undefined,
+  repeatIntervalMinutes = 0,
 ): { finding: PositionHealthFinding; state: PositionHealthSignalState } {
   const activeBefore = old?.fingerprint === fingerprint && old.active === true;
+  const lastNotifiedAt = old?.last_notified_at ? Date.parse(old.last_notified_at) : NaN;
+  const repeatDue = active && activeBefore && repeatIntervalMinutes > 0
+    && Number.isFinite(lastNotifiedAt)
+    && Date.parse(observedAt) - lastNotifiedAt >= repeatIntervalMinutes * 60_000;
+  const notify = active && (!activeBefore || repeatDue);
   return {
-    finding: { ...finding, newly_triggered: active && !activeBefore, active },
+    finding: { ...finding, newly_triggered: notify, active },
     state: {
       fingerprint,
       active,
       ...(active ? { activated_at: activeBefore ? old.activated_at ?? observedAt : observedAt } : {}),
       last_health_factor: finding.health_factor,
+      ...(active && (notify || old?.last_notified_at)
+        ? { last_notified_at: notify ? observedAt : old!.last_notified_at }
+        : {}),
     },
   };
 }
@@ -263,8 +319,19 @@ export function evaluatePositionHealth(
   market_thresholds: Record<string, number | string> = {},
   previous_states: unknown = {},
   risk_rules: PositionRiskRule[] = [],
+  stress_rules: PositionStressRule[] = [],
+  options: PositionRiskOptions = {},
 ) {
   validateRiskRules(risk_rules);
+  validateStressRules(stress_rules);
+  const rearmMargin = options.rearm_health_factor_margin ?? 0;
+  const repeatInterval = options.repeat_interval_minutes ?? 0;
+  if (!Number.isFinite(rearmMargin) || rearmMargin < 0) {
+    throw new Error("rearm_health_factor_margin must be non-negative");
+  }
+  if (!Number.isFinite(repeatInterval) || repeatInterval < 0) {
+    throw new Error("repeat_interval_minutes must be non-negative");
+  }
   const observedAt = Date.parse(inputs.observed_at);
   if (!Number.isFinite(observedAt)) throw new Error("observed_at must be an ISO timestamp");
   const inspection = inspectHealthFactors(inputs, default_threshold, market_thresholds);
@@ -291,15 +358,21 @@ export function evaluatePositionHealth(
       const anchor = trendBaseline(allSamples, retentionCutoff);
       history[position.id] = allSamples.filter((sample) => Date.parse(sample.observed_at) > retentionCutoff);
       if (anchor && !history[position.id].includes(anchor)) history[position.id].unshift(anchor);
+      history[position.id] = history[position.id].slice(-120);
     }
 
     const thresholdId = `health_factor:${position.id}`;
+    const thresholdWasActive = previous[thresholdId]?.fingerprint === position.threshold
+      && previous[thresholdId]?.active === true;
+    const thresholdActive = thresholdWasActive
+      ? compareHealthFactor(position.health_factor!, String(Number(position.threshold) + rearmMargin)) < 0
+      : position.breached;
     const thresholdTransition = transitionFinding({
       id: thresholdId, kind: "health_factor", rule_id: "health_factor_threshold",
       position_id: position.id, market: position.market_name,
       health_factor: position.health_factor!, threshold: position.threshold,
       value: position.health_factor!,
-    }, position.breached, position.threshold, inputs.observed_at, previous[thresholdId]);
+    }, thresholdActive, position.threshold, inputs.observed_at, previous[thresholdId], repeatInterval);
     signals[thresholdId] = thresholdTransition.state;
     findings.push(thresholdTransition.finding);
 
@@ -329,16 +402,43 @@ export function evaluatePositionHealth(
       }
       const debtPasses = rule.min_debt_usd === undefined
         || (position.debt_usd !== null && Number(position.debt_usd) >= rule.min_debt_usd);
+      const wasActive = previous[id]?.fingerprint
+        === `${rule.kind}:${rule.threshold_percent}:${rule.window_minutes ?? ""}:${rule.min_debt_usd ?? ""}:${rule.rearm_percent ?? ""}`
+        && previous[id]?.active === true;
       const active = value !== undefined && debtPasses && (rule.kind === "liquidation_buffer"
-        ? value <= rule.threshold_percent : value >= rule.threshold_percent);
-      const fingerprint = `${rule.kind}:${rule.threshold_percent}:${rule.window_minutes ?? ""}:${rule.min_debt_usd ?? ""}`;
+        ? value <= rule.threshold_percent
+        : value >= (wasActive ? rule.rearm_percent ?? rule.threshold_percent * 0.8 : rule.threshold_percent));
+      const fingerprint = `${rule.kind}:${rule.threshold_percent}:${rule.window_minutes ?? ""}:${rule.min_debt_usd ?? ""}:${rule.rearm_percent ?? ""}`;
       const transition = transitionFinding({
         id, kind: rule.kind, rule_id: rule.id, position_id: position.id,
         market: position.market_name, health_factor: position.health_factor!,
         threshold: String(rule.threshold_percent), value: value === undefined ? "unavailable" : percent(value),
         ...(rule.window_minutes ? { window_minutes: rule.window_minutes } : {}),
         ...(baseline ? { baseline } : {}),
-      }, active, fingerprint, inputs.observed_at, previous[id]);
+      }, active, fingerprint, inputs.observed_at, previous[id], repeatInterval);
+      signals[id] = transition.state;
+      findings.push(transition.finding);
+    }
+
+    for (const rule of stress_rules) {
+      const id = `stress_health_factor:${rule.id}:${position.id}`;
+      const healthFactor = Number(position.health_factor);
+      const debtPasses = rule.min_debt_usd === undefined
+        || (position.debt_usd !== null && Number(position.debt_usd) >= rule.min_debt_usd);
+      const debtChange = rule.debt_change_percent ?? 0;
+      const stressed = healthFactor * (1 + rule.collateral_change_percent / 100)
+        / (1 + debtChange / 100);
+      if (!Number.isFinite(stressed)) throw new Error(`HF for ${position.name} is too large for stress rules`);
+      const fingerprint = `${rule.collateral_change_percent}:${debtChange}:${rule.threshold}:${rule.min_debt_usd ?? ""}`;
+      const wasActive = previous[id]?.fingerprint === fingerprint && previous[id]?.active === true;
+      const activeThreshold = wasActive ? rule.threshold + rearmMargin : rule.threshold;
+      const transition = transitionFinding({
+        id, kind: "stress_health_factor", rule_id: rule.id, position_id: position.id,
+        market: position.market_name, health_factor: position.health_factor!,
+        threshold: String(rule.threshold), value: percent(stressed), approximate: true,
+        collateral_change_percent: rule.collateral_change_percent,
+        debt_change_percent: debtChange,
+      }, debtPasses && stressed < activeThreshold, fingerprint, inputs.observed_at, previous[id], repeatInterval);
       signals[id] = transition.state;
       findings.push(transition.finding);
     }
@@ -364,7 +464,14 @@ function findingDescription(protocol: string, user: string, observedAt: string, 
       ? [`Current HF: ${Number(finding.health_factor).toFixed(4)}`, `HF dropped: ${finding.value}% in ${finding.window_minutes}m`, `Rule threshold: ${finding.threshold}%`]
       : finding.kind === "debt_growth"
         ? [`Current HF: ${Number(finding.health_factor).toFixed(4)}`, `Debt grew: ${finding.value}% in ${finding.window_minutes}m`, `Rule threshold: ${finding.threshold}%`]
-        : [`Current HF: ${Number(finding.health_factor).toFixed(4)}`, `Estimated collateral-price buffer: ${finding.value}%`, `Rule threshold: ${finding.threshold}%`];
+        : finding.kind === "stress_health_factor"
+          ? [
+            `Current HF: ${Number(finding.health_factor).toFixed(4)}`,
+            `Scenario: collateral ${finding.collateral_change_percent}% / debt ${finding.debt_change_percent}%`,
+            `Approximate stressed HF: ${finding.value}`,
+            `Stress HF threshold: ${finding.threshold}`,
+          ]
+          : [`Current HF: ${Number(finding.health_factor).toFixed(4)}`, `Estimated collateral-price buffer: ${finding.value}%`, `Rule threshold: ${finding.threshold}%`];
   return [`${protocol} account: ${user}`, `Checked: ${observedAt}`, `Market: ${finding.market}`, ...details].join("\n");
 }
 
@@ -388,6 +495,11 @@ export function renderPositionHealthMessages(
       health_factor: finding.health_factor, value: finding.value, threshold: finding.threshold,
       ...(finding.window_minutes ? { window_minutes: finding.window_minutes } : {}),
       ...(finding.baseline ? { baseline: finding.baseline } : {}),
+      ...(finding.approximate ? { approximate: true } : {}),
+      ...(finding.collateral_change_percent !== undefined
+        ? { collateral_change_percent: finding.collateral_change_percent } : {}),
+      ...(finding.debt_change_percent !== undefined
+        ? { debt_change_percent: finding.debt_change_percent } : {}),
     },
   });
   if (findings.length <= max) return findings.map(render);

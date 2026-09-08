@@ -3,6 +3,7 @@ description: Run the configured Aave V3 monitor instance once per minute.
 args:
   aave_api: $res:f/aave/resources/aave_v3
   user: '0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3'
+  default_threshold: '1.15'
   chain_ids:
     - 1
     - 42161
@@ -32,7 +33,15 @@ args:
     AaveV3Mantle: '1.015'
     AaveV3Monad: '1.015'
     AaveV3Plasma: '1.015'
-  risk_rules: []
+  risk_rules:
+    - {id: hf_drop_5m, kind: health_factor_drop, window_minutes: 5, threshold_percent: 10, rearm_percent: 5}
+    - {id: hf_drop_30m, kind: health_factor_drop, window_minutes: 30, threshold_percent: 20, rearm_percent: 10}
+    - {id: debt_up_5m, kind: debt_growth, window_minutes: 5, threshold_percent: 20, rearm_percent: 10}
+    - {id: debt_up_30m, kind: debt_growth, window_minutes: 30, threshold_percent: 40, rearm_percent: 20}
+    - {id: debt_up_60m, kind: debt_growth, window_minutes: 60, threshold_percent: 60, rearm_percent: 30}
+  stress_rules:
+    - {id: collateral_down_10, collateral_change_percent: -10, debt_change_percent: 0, threshold: 1.05}
+  risk_options: {rearm_health_factor_margin: 0.05, repeat_interval_minutes: 60}
   message_policy: {max_messages: 20, overflow: summary}
   severity: warning
   telegram_auth: $res:u/oneke/yeap-bot

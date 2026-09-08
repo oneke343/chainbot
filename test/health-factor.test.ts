@@ -8,6 +8,10 @@ import {
   evaluatePositionHealth, inspectHealthFactors, renderPositionHealthMessages,
   type HealthInputs, type HealthPosition, type PositionRiskRule,
 } from "../f/chain_sentinel/lib/health-factor.ts";
+import {
+  assertLiquidationPageCoverage, evaluateLiquidations, type LiquidationEvent,
+} from "../f/chain_sentinel/lib/liquidation-events.ts";
+import { evaluateMarketRisk } from "../f/chain_sentinel/lib/market-risk.ts";
 import { main as graphql } from "../f/chain_sentinel/scripts/sources/graphql.ts";
 import { main as alertPolicy } from "../f/chain_sentinel/scripts/alert_policies/matched_output.ts";
 import { main as telegram } from "../f/chain_sentinel/scripts/destinations/send_telegram.ts";
@@ -148,6 +152,76 @@ test("common engine evaluates HF drop, debt growth and liquidation buffer across
   assert.equal(evaluatePositionHealth(changed, 1.1, {}, second.states, rules).triggered_findings.length, 0);
 });
 
+test("position engine applies stress scenarios, hysteresis, repeats, and bounded history", () => {
+  const start = inputs([position({ health_factor: "1.09" })]);
+  const first = evaluatePositionHealth(start, 1.1, {}, {}, [], [{
+    id: "collateral_down_10", collateral_change_percent: -10, threshold: 1.1,
+  }], { rearm_health_factor_margin: 0.05, repeat_interval_minutes: 60 });
+  assert.deepEqual(first.triggered_findings.map((finding) => finding.kind), [
+    "health_factor", "stress_health_factor",
+  ]);
+  assert.equal(first.triggered_findings[1].value, "0.981");
+  assert.equal(first.triggered_findings[1].approximate, true);
+
+  const recovering = { ...start, observed_at: "2026-09-05T00:30:00.000Z",
+    positions: [position({ health_factor: "1.12" })] };
+  const stillActive = evaluatePositionHealth(recovering, 1.1, {}, first.states, [], [{
+    id: "collateral_down_10", collateral_change_percent: -10, threshold: 1.1,
+  }], { rearm_health_factor_margin: 0.05, repeat_interval_minutes: 60 });
+  assert.equal(stillActive.active_findings.some((finding) => finding.kind === "health_factor"), true);
+  assert.equal(stillActive.triggered_findings.length, 0);
+
+  const repeated = evaluatePositionHealth({ ...recovering, observed_at: "2026-09-05T01:00:00.000Z" },
+    1.1, {}, stillActive.states, [], [{
+      id: "collateral_down_10", collateral_change_percent: -10, threshold: 1.1,
+    }], { rearm_health_factor_margin: 0.05, repeat_interval_minutes: 60 });
+  assert.equal(repeated.triggered_findings.length, 2);
+
+  let states: unknown = {};
+  const historyRule: PositionRiskRule[] = [{
+    id: "slow", kind: "health_factor_drop", window_minutes: 1440, threshold_percent: 99,
+  }];
+  for (let minute = 0; minute < 130; minute++) {
+    states = evaluatePositionHealth({
+      ...start, observed_at: new Date(Date.parse(start.observed_at) + minute * 60_000).toISOString(),
+    }, 1, {}, states, historyRule).states;
+  }
+  assert.equal((states as { history: Record<string, unknown[]> }).history[position().id].length, 120);
+});
+
+test("liquidation state bootstraps, deduplicates and refuses a cursor gap", () => {
+  const event = (id: string, block = "10"): LiquidationEvent => ({
+    id, protocol: "Morpho", chain_id: 1, market: "ETH / WETH-USDC", user,
+    transaction_hash: marketId(Number(id)), log_index: Number(id), block_number: block,
+    observed_at: "2026-09-05T00:00:00.000Z",
+  });
+  const first = evaluateLiquidations([event("1")]);
+  assert.equal(first.output.matched, false);
+  const second = evaluateLiquidations([event("1"), event("2", "11")], first.states);
+  assert.equal(second.output.messages.length, 1);
+  assert.equal(evaluateLiquidations([event("2", "11")], second.states).output.matched, false);
+  assert.throws(() => assertLiquidationPageCoverage([event("3")], second.states, true), /overlaps/);
+});
+
+test("market risk evaluates independent metrics and rearms each market signal", () => {
+  const snapshot = {
+    id: "1:market", protocol: "Morpho", chain_id: 1, market: "Ethereum / market",
+    observed_at: "2026-09-05T00:00:00.000Z", liquidity_usd: 10,
+    utilization_percent: 99, bad_debt_usd: 5,
+    warnings: [{ type: "oracle_unusable", level: "critical" as const }],
+  };
+  const rules = { min_liquidity_usd: 100, max_utilization_percent: 95, max_bad_debt_usd: 0 };
+  const first = evaluateMarketRisk([snapshot], rules);
+  assert.deepEqual(first.output.messages.map((message) => message.fields?.finding_kind), [
+    "liquidity", "utilization", "bad_debt", "oracle",
+  ]);
+  assert.equal(evaluateMarketRisk([snapshot], rules, {}, first.states).output.matched, false);
+  const safe = evaluateMarketRisk([{ ...snapshot, liquidity_usd: 200, utilization_percent: 50,
+    bad_debt_usd: 0, warnings: [] }], rules, {}, first.states);
+  assert.equal(safe.output.fields.active_findings.length, 0);
+  assert.equal(evaluateMarketRisk([snapshot], rules, {}, safe.states).output.messages.length, 4);
+});
+
 test("message policy bounds output and summarizes overflow", () => {
   const findings = evaluatePositionHealth(inputs([
     position({ id: "1:a", name: "A", market_name: "A" }),
@@ -210,6 +284,14 @@ test("Aave native queries discover mainnets then request explicitly selected cha
   const v3 = readFileSync(new URL("../f/aave/scripts/sources/aave_market_positions.gql", import.meta.url), "utf8");
   assert.match(v3, /totalDebtBase/);
   assert.match(v3, /totalCollateralBase/);
+  assert.match(v3, /address/);
+  const v3Liquidations = readFileSync(new URL("../f/aave/scripts/sources/aave_v3_user_liquidations.gql", import.meta.url), "utf8");
+  assert.match(v3Liquidations, /LIQUIDATION_CALL/);
+  const v4Liquidations = readFileSync(new URL("../f/aave/scripts/sources/aave_v4_user_liquidations.gql", import.meta.url), "utf8");
+  assert.match(v4Liquidations, /LIQUIDATED/);
+  const v3MarketRisk = readFileSync(new URL("../f/aave/scripts/sources/aave_v3_market_risk.gql", import.meta.url), "utf8");
+  assert.match(v3MarketRisk, /availableLiquidity/);
+  assert.match(v3MarketRisk, /borrowCap/);
 });
 
 test("Aave normalizes cross-network Spokes, preserving zero HF and excluding supply-only accounts", () => {
@@ -258,6 +340,12 @@ test("Morpho native GraphQL uses a single query, fixed 1000 limit and optional n
   assert.match(query, /skip: 0/);
   assert.match(query, /\$chain_ids: \[Int!\]/);
   assert.match(query, /chainId_in: \$chain_ids/);
+  const liquidations = readFileSync(new URL("../f/morpho/scripts/sources/morpho_user_liquidations.gql", import.meta.url), "utf8");
+  assert.match(liquidations, /type_in: \[Liquidation\]/);
+  assert.match(liquidations, /logIndex/);
+  const marketRisk = readFileSync(new URL("../f/morpho/scripts/sources/morpho_market_risk.gql", import.meta.url), "utf8");
+  assert.match(marketRisk, /badDebt/);
+  assert.match(marketRisk, /warnings/);
   assert.match(query, /userAddress_in: \[\$user\]/);
   assert.match(query, /borrowShares_gte: "1"/);
   assert.match(query, /pageInfo \{ count countTotal limit skip \}/);

@@ -1,0 +1,34 @@
+summary: Morpho liquidation events
+description: Query and deduplicate Morpho user liquidation events.
+value:
+  modules:
+    - id: source
+      value:
+        type: script
+        path: f/morpho/scripts/sources/morpho_user_liquidations
+        input_transforms:
+          api: {type: javascript, expr: flow_input.api}
+          user: {type: javascript, expr: flow_input.user}
+          chain_ids: {type: javascript, expr: 'flow_input.chain_ids?.length ? flow_input.chain_ids : null'}
+    - id: rules
+      value:
+        type: script
+        path: f/morpho/scripts/rules/evaluate_morpho_liquidations
+        input_transforms:
+          inputs: {type: javascript, expr: results.source}
+          user: {type: javascript, expr: flow_input.user}
+          notify_on_first_run: {type: javascript, expr: flow_input.notify_on_first_run ?? false}
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order: [api, user, chain_ids, notify_on_first_run]
+  properties:
+    api: {type: object, format: resource-graphql, default: '$res:f/morpho/resources/morpho'}
+    user: {type: string, pattern: '^0x[0-9a-fA-F]{40}$'}
+    chain_ids:
+      type: array
+      default: []
+      uniqueItems: true
+      items: {type: integer, minimum: 1}
+    notify_on_first_run: {type: boolean, default: false}
+  required: [api, user]

@@ -1,0 +1,9 @@
+summary: Shared lending market risk evaluator
+description: Import-only state machine for liquidity, utilization, cap, bad-debt, Oracle and config findings.
+lock: '!inline f/chain_sentinel/lib/market-risk.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

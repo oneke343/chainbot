@@ -14,7 +14,15 @@ args:
     "Avalanche / AVAX Correlated": 1.01
 
   chain_ids: []
-  risk_rules: []
+  risk_rules:
+    - {id: hf_drop_5m, kind: health_factor_drop, window_minutes: 5, threshold_percent: 10, rearm_percent: 5}
+    - {id: hf_drop_30m, kind: health_factor_drop, window_minutes: 30, threshold_percent: 20, rearm_percent: 10}
+    - {id: debt_up_5m, kind: debt_growth, window_minutes: 5, threshold_percent: 20, rearm_percent: 10}
+    - {id: debt_up_30m, kind: debt_growth, window_minutes: 30, threshold_percent: 40, rearm_percent: 20}
+    - {id: debt_up_60m, kind: debt_growth, window_minutes: 60, threshold_percent: 60, rearm_percent: 30}
+  stress_rules:
+    - {id: collateral_down_10, collateral_change_percent: -10, debt_change_percent: 0, threshold: 1.05}
+  risk_options: {rearm_health_factor_margin: 0.05, repeat_interval_minutes: 60}
   message_policy: {max_messages: 20, overflow: summary}
   severity: warning
   telegram_auth: $res:u/oneke/yeap-bot

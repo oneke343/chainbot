@@ -1,0 +1,18 @@
+query AaveV3MarketRisk($chain_ids: [ChainId!]!) {
+  markets(request: {chainIds: $chain_ids}) {
+    name address chain {chainId name}
+    reserves(request: {reserveType: BOTH, orderBy: {tokenName: ASC}}) {
+      underlyingToken {address symbol}
+      usdExchangeRate
+      isFrozen isPaused
+      supplyInfo {total {value} supplyCap {amount {value} usd} supplyCapReached}
+      borrowInfo {
+        total {amount {value} usd}
+        availableLiquidity {amount {value} usd}
+        utilizationRate {value}
+        borrowCap {amount {value} usd}
+        borrowCapReached
+      }
+    }
+  }
+}
