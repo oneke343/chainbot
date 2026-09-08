@@ -1,0 +1,26 @@
+summary: Execute a GraphQL query
+description: Accept a GraphQL Resource, query and variables; reject HTTP or partial GraphQL errors.
+lock: '!inline f/chain_sentinel/scripts/sources/graphql.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    api:
+      type: object
+      description: ''
+      default: null
+      format: resource-graphql
+    query:
+      type: string
+      description: ''
+      default: null
+      originalType: string
+    variables:
+      type: object
+      description: ''
+      default: {}
+      additionalProperties: true
+  required:
+    - api
+    - query

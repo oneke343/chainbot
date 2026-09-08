@@ -1,0 +1,6 @@
+value:
+  base_url: https://api.v3.aave.com/graphql
+  bearer_token: ''
+  custom_headers: {}
+description: Public Aave V3 GraphQL API.
+resource_type: graphql

@@ -1,0 +1,6 @@
+query AaveV4Chains {
+  chains(request: {query: {filter: MAINNET_ONLY}}) {
+    chainId
+    name
+  }
+}

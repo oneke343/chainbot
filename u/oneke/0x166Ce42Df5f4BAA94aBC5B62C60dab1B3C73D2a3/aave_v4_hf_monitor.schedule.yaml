@@ -1,0 +1,24 @@
+summary: Check Aave V4 health factors every minute
+description: Monitor every discovered Aave V4 mainnet for the configured user and send warning alerts to Telegram and FlashDuty.
+schedule: '0 */1 * * * *'
+timezone: Asia/Shanghai
+cron_version: v2
+enabled: true
+is_flow: true
+script_path: u/oneke/0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3/aave_v4_hf_monitor
+args:
+  api: $res:f/aave/resources/aave_v4
+  user: '0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3'
+  default_threshold: 1.15
+  market_thresholds:
+    "Avalanche / AVAX Correlated": 1.01
+
+  chain_ids: []
+  severity: warning
+  telegram_auth: $res:u/oneke/yeap-bot
+  telegram_chat_id: '-1004252768572'
+  flashduty_enabled: true
+  flashduty_destination: $res:u/oneke/flashcat
+  flashduty_alert_key: ''
+no_flow_overlap: true
+ws_error_handler_muted: false

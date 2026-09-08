@@ -1,0 +1,32 @@
+summary: Check BTCUSDT price changes every minute
+description: Run the Telegram-only BTCUSDT monitor once per minute; skip overlapping scheduled runs.
+schedule: '0 */1 * * * *'
+timezone: Asia/Shanghai
+cron_version: v2
+enabled: true
+is_flow: true
+script_path: u/oneke/binance_btcusdt_price_monitor
+args:
+  connection: $res:f/binance/resources/spot_market_data
+  symbol: BTCUSDT
+  rules:
+    - id: drop_5m
+      direction: down
+      rearm_percent: 2.5
+      threshold_percent: 3
+      window_minutes: 5
+    - id: rise_15m
+      direction: up
+      rearm_percent: 4
+      threshold_percent: 5
+      window_minutes: 15
+    - id: move_60m
+      direction: either
+      rearm_percent: 7
+      threshold_percent: 8
+      window_minutes: 60
+  severity: warning
+  telegram_auth: $res:u/oneke/yeap-bot
+  telegram_chat_id: '-1004252768572'
+no_flow_overlap: true
+ws_error_handler_muted: false

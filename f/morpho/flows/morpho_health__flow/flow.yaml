@@ -1,0 +1,88 @@
+summary: Morpho 用户仓位 HF 监控
+description: Query up to 1000 Morpho Blue borrowing positions in one GraphQL request.
+  Rule rejects incomplete results, evaluates thresholds, and persists MonitorState.
+value:
+  modules:
+    - id: sources
+      value:
+        type: script
+        input_transforms:
+          api:
+            type: javascript
+            expr: flow_input.api
+          chain_ids:
+            type: javascript
+            expr: 'flow_input.chain_ids?.length === 0 ? null : (flow_input.chain_ids ?? null)'
+          user:
+            type: javascript
+            expr: flow_input.user
+        path: f/morpho/scripts/sources/morpho_user_positions
+      retry:
+        constant:
+          attempts: 2
+          seconds: 2
+      timeout:
+        type: static
+        value: 120
+    - id: rules
+      value:
+        type: script
+        input_transforms:
+          default_threshold:
+            type: javascript
+            expr: flow_input.default_threshold
+          inputs:
+            type: javascript
+            expr: results.sources
+          user:
+            type: javascript
+            expr: flow_input.user
+          chain_ids:
+            type: javascript
+            expr: flow_input.chain_ids ?? []
+          market_thresholds:
+            type: javascript
+            expr: flow_input.market_thresholds ?? {}
+        path: f/morpho/scripts/rules/evaluate_morpho_health
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - api
+    - user
+    - default_threshold
+    - market_thresholds
+    - chain_ids
+  properties:
+    api:
+      type: object
+      default: $res:f/morpho/resources/morpho
+      format: resource-graphql
+    chain_ids:
+      type: array
+      description: Empty discovers all API-supported networks. Unsupported IDs fail.
+      default: []
+      items:
+        type: integer
+        minimum: 1
+      uniqueItems: true
+    default_threshold:
+      type: number
+      description: HF below this value matches unless the market has an override.
+      exclusiveMinimum: 0
+    market_thresholds:
+      type: object
+      additionalProperties:
+        type: number
+        exclusiveMinimum: 0
+      description: Copy market_name or exact name from fields.positions. Ambiguous
+        market_name fails; name includes the full Market ID. Unknown keys are
+        reported in unused_thresholds.
+      default: {}
+    user:
+      type: string
+      pattern: ^0x[0-9a-fA-F]{40}$
+  required:
+    - api
+    - user
+    - default_threshold

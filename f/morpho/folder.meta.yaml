@@ -1,0 +1,6 @@
+summary: Morpho borrowing position monitors
+display_name: morpho
+owners:
+  - u/oneke
+extra_perms:
+  u/oneke: true

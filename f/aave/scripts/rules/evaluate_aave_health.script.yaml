@@ -1,0 +1,55 @@
+summary: Evaluate and persist Aave health-factor state
+description: Evaluate configured markets, persist MonitorState, and return MonitorOutput.
+lock: '!inline f/aave/scripts/rules/evaluate_aave_health.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    inputs:
+      type: object
+      description: ''
+      default: null
+      format: resource-aave_health_inputs
+      properties:
+        aave_market_positions:
+          type: object
+          description: ''
+          properties:
+            markets:
+              type: array
+              description: ''
+              format: resource-aave_market
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    description: ''
+                    originalType: string
+                  userState:
+                    type: object
+                    description: ''
+                    properties:
+                      healthFactor:
+                        type: ''
+                        description: ''
+              originalType: record[]
+    market_thresholds:
+      type: object
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: number
+      description: Health-factor threshold keyed by Aave market name.
+      default: null
+      format: resource-record
+    user:
+      type: string
+      description: Monitored EVM account.
+      default: null
+      originalType: string
+  required:
+    - inputs
+    - user
+    - market_thresholds

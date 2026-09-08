@@ -1,0 +1,27 @@
+summary: Fetch closed Binance spot klines
+description: Fetch and normalize enough closed one-minute klines for all
+  configured rolling price-change windows.
+lock: '!inline f/binance/scripts/sources/spot_klines.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    connection:
+      type: object
+      description: ''
+      default: null
+      format: resource-http_connection
+    max_window_minutes:
+      type: number
+      description: ''
+      default: null
+    symbol:
+      type: string
+      description: ''
+      default: null
+      originalType: string
+  required:
+    - connection
+    - symbol
+    - max_window_minutes

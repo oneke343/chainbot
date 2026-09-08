@@ -1,0 +1,18 @@
+defaultTs: bun
+includes:
+  - f/aave/**
+  - f/binance/**
+  - f/morpho/**
+  - f/chain_sentinel/**
+  - u/oneke/**
+excludes: [
+  "u/**/**/__monitor_state.resource.yaml"
+]
+skipVariables: true
+skipResources: false
+skipResourceTypes: true
+skipSecrets: true
+includeSchedules: true
+includeTriggers: false
+nonDottedPaths: true
+syncBehavior: v1

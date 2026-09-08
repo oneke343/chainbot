@@ -1,0 +1,20 @@
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  additionalProperties: false
+  required:
+    - url
+    - integration_key
+  properties:
+    url:
+      type: string
+      format: uri
+      minLength: 1
+      maxLength: 2048
+      description: FlashDuty standard alert event endpoint URL.
+    integration_key:
+      type: string
+      minLength: 1
+      maxLength: 500
+      description: Integration key from a FlashDuty standard alert integration.
+description: FlashDuty standard alert integration endpoint and credentials.

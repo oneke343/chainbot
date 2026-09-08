@@ -1,0 +1,19 @@
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  required:
+    - base_url
+  properties:
+    base_url:
+      type: string
+      format: uri
+      description: Base URL for the remote HTTP service.
+    bearer_token:
+      type: string
+      description: Optional bearer token. Store secret values through Windmill variables.
+    headers:
+      type: object
+      additionalProperties:
+        type: string
+      description: Headers applied to every request.
+description: Reusable HTTP endpoint connection for monitor sources and webhook destinations.

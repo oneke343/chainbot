@@ -1,0 +1,43 @@
+summary: Evaluate Aave V4 health-factor thresholds and save MonitorState
+description: Per-market threshold overrides with a default for all remaining
+  borrowing positions.
+lock: '!inline f/aave/scripts/rules/evaluate_aave_v4_health.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    chain_ids:
+      type: array
+      description: ''
+      default: []
+      items:
+        type: integer
+        minimum: 1
+      originalType: number[]
+    default_threshold:
+      type: number
+      description: Default HF threshold for markets without an override.
+      default: null
+      exclusiveMinimum: 0
+    inputs:
+      type: object
+      description: Combined GraphQL Source results containing chains and userPositions.
+      default: null
+    market_thresholds:
+      type: object
+      additionalProperties:
+        type: number
+        exclusiveMinimum: 0
+      description: ''
+      default: {}
+    user:
+      type: string
+      pattern: '^0x[0-9a-fA-F]{40}$'
+      description: ''
+      default: null
+      originalType: string
+  required:
+    - inputs
+    - user
+    - default_threshold

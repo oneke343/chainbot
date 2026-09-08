@@ -1,0 +1,25 @@
+summary: Build one alert message from MonitorOutput
+description: Add severity to a Monitor-rendered title and description, without
+  knowing Destinations.
+lock: '!inline f/chain_sentinel/scripts/alert_policies/matched_output.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    monitor_output:
+      type: object
+      description: ''
+      default: null
+      format: resource-monitor_output
+    severity:
+      type: string
+      description: ''
+      default: warning
+      enum:
+        - info
+        - warning
+        - critical
+      originalType: enum
+  required:
+    - monitor_output

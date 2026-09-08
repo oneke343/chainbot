@@ -1,0 +1,4 @@
+description: ''
+value:
+  token: $var:u/oneke/yeap-bot
+resource_type: telegram

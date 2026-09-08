@@ -1,0 +1,84 @@
+summary: Run the Aave health-factor monitor
+description: Query Aave positions, evaluate configured health-factor thresholds,
+  persist the Root Flow MonitorState, and return MonitorOutput.
+value:
+  modules:
+    - id: fetch_positions
+      summary: Query the user's Aave market positions
+      value:
+        type: script
+        input_transforms:
+          api:
+            type: javascript
+            expr: flow_input.aave_api
+          chainIds:
+            type: javascript
+            expr: flow_input.chain_ids ?? [1, 10, 137, 42161, 8453]
+          user:
+            type: javascript
+            expr: flow_input.user
+        path: f/aave/scripts/sources/aave_market_positions
+      retry:
+        exponential:
+          attempts: 3
+          multiplier: 2
+          random_factor: 20
+          seconds: 2
+      timeout:
+        type: static
+        value: 30
+    - id: evaluate_and_persist
+      summary: Evaluate the Rule and persist the next MonitorState
+      value:
+        type: script
+        input_transforms:
+          inputs:
+            type: javascript
+            expr: >-
+              ({
+                aave_market_positions: results.fetch_positions?.data ?? results.fetch_positions
+              })
+          market_thresholds:
+            type: javascript
+            expr: flow_input.market_thresholds
+          user:
+            type: javascript
+            expr: flow_input.user
+        path: f/aave/scripts/rules/evaluate_aave_health
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - aave_api
+    - user
+    - chain_ids
+    - market_thresholds
+  properties:
+    aave_api:
+      type: object
+      description: Aave GraphQL Resource.
+      format: resource-graphql
+    chain_ids:
+      type: array
+      default:
+        - 1
+        - 10
+        - 137
+        - 42161
+        - 8453
+      items:
+        type: integer
+    market_thresholds:
+      type: object
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: number
+      description: Health-factor threshold keyed by Aave market name.
+    user:
+      type: string
+      description: Monitored EVM address.
+  required:
+    - aave_api
+    - user
+    - market_thresholds

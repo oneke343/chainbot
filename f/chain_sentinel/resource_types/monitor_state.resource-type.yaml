@@ -1,0 +1,46 @@
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  additionalProperties: false
+  required:
+    - inputs
+    - states
+    - outputs
+  properties:
+    inputs:
+      type: object
+      additionalProperties: true
+      description: Results produced by Sources during the current run.
+    states:
+      type: object
+      additionalProperties: true
+      description: Rule-owned state persisted across Root Flow runs.
+    outputs:
+      type: object
+      additionalProperties: false
+      required:
+        - matched
+        - fields
+      properties:
+        matched:
+          type: boolean
+          description: Whether the current Rule result matches its alert condition.
+        message:
+          type: object
+          additionalProperties: false
+          required:
+            - title
+            - description
+          properties:
+            title:
+              type: string
+              minLength: 1
+            description:
+              type: string
+              minLength: 1
+        fields:
+          type: object
+          additionalProperties: true
+          description: Structured values passed to AlertPolicy and Destinations.
+      description: Business outputs produced by the Rule during the current run.
+description: Root Flow-scoped Monitor state containing Source inputs, Rule state, and Rule outputs.

@@ -1,0 +1,40 @@
+summary: Fetch JSON from an HTTP endpoint
+description: Reusable REST source with connection-level auth and per-run request parameters.
+lock: '!inline f/chain_sentinel/scripts/sources/http_json.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    body:
+      type: object
+      description: Optional JSON request body.
+      default: null
+    connection:
+      type: object
+      description: HTTP endpoint and shared authentication.
+      default: null
+      format: resource-http_connection
+    headers:
+      type: object
+      additionalProperties:
+        type: string
+      default: {}
+      format: resource-record
+    method:
+      type: string
+      default: GET
+      originalType: string
+    path:
+      type: string
+      description: Relative path under connection.base_url.
+      default: null
+      originalType: string
+    query:
+      type: object
+      additionalProperties: true
+      default: {}
+      format: resource-record
+  required:
+    - connection
+    - path

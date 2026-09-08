@@ -1,0 +1,13 @@
+query AaveV4UserPositions($user: EvmAddress!, $chain_ids: [ChainId!]!) {
+  userPositions(request: {
+    user: $user
+    filter: {chainIds: $chain_ids}
+    orderBy: {healthFactor: ASC}
+  }) {
+    user
+    healthFactor {current}
+    totalDebt {current {value}}
+    totalCollateral {current {value}}
+    spoke {address name chain {chainId name}}
+  }
+}

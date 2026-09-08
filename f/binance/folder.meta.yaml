@@ -1,0 +1,6 @@
+summary: Binance spot price monitors
+display_name: binance
+owners:
+  - u/oneke
+extra_perms:
+  u/oneke: true

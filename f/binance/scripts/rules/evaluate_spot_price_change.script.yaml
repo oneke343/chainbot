@@ -1,0 +1,58 @@
+summary: Evaluate Binance spot price changes
+description: Evaluate OR-combined price-change rules, persist Root Flow
+  MonitorState, and return one MonitorOutput transition.
+lock: '!inline f/binance/scripts/rules/evaluate_spot_price_change.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    inputs:
+      type: object
+      description: ''
+      default: null
+      format: resource-binance_price_inputs
+      properties:
+        binance_spot_klines:
+          type: object
+          description: ''
+          format: resource-spot_klines_result
+    rules:
+      type: array
+      description: ''
+      default: null
+      format: resource-price_change_rule
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            description: ''
+            originalType: string
+          direction:
+            type: string
+            description: ''
+            enum:
+              - up
+              - down
+              - either
+            originalType: enum
+          min_quote_volume:
+            type: number
+            description: ''
+          min_trade_count:
+            type: number
+            description: ''
+          rearm_percent:
+            type: number
+            description: ''
+          threshold_percent:
+            type: number
+            description: ''
+          window_minutes:
+            type: number
+            description: ''
+      originalType: record[]
+  required:
+    - inputs
+    - rules

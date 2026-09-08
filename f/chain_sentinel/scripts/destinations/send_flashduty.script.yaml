@@ -1,0 +1,25 @@
+summary: Send an alert to FlashDuty
+description: Send an AlertMessage through the FlashDuty standard alert event API.
+lock: '!inline f/chain_sentinel/scripts/destinations/send_flashduty.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    alert_key:
+      type: string
+      description: ''
+      default: null
+      originalType: string
+    destination:
+      type: object
+      description: ''
+      default: null
+      format: resource-flashduty
+    message:
+      type: object
+      description: ''
+      default: null
+      format: resource-alert_message
+  required:
+    - destination

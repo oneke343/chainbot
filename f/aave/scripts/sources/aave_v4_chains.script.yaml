@@ -1,0 +1,14 @@
+summary: Discover Aave V4 mainnets
+description: Native GraphQL query for API-supported mainnet chain IDs and names.
+lock: ''
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    api:
+      type: object
+      description: ''
+      format: resource-graphql
+  required:
+    - api

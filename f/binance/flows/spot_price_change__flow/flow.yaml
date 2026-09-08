@@ -1,0 +1,109 @@
+summary: Evaluate Binance spot price-change rules
+description: Fetch closed one-minute Binance spot klines, evaluate OR-combined
+  rolling price-change rules, persist Root Flow MonitorState, and return
+  MonitorOutput.
+value:
+  modules:
+    - id: fetch_klines
+      summary: Fetch closed one-minute Binance spot klines
+      value:
+        type: script
+        input_transforms:
+          connection:
+            type: javascript
+            expr: flow_input.connection
+          max_window_minutes:
+            type: javascript
+            expr: Math.max(...flow_input.rules.map((rule) => rule.window_minutes))
+          symbol:
+            type: javascript
+            expr: flow_input.symbol
+        path: f/binance/scripts/sources/spot_klines
+      retry:
+        exponential:
+          attempts: 3
+          multiplier: 2
+          random_factor: 20
+          seconds: 2
+      timeout:
+        type: static
+        value: 30
+    - id: evaluate_and_persist
+      summary: Evaluate price-change rules and persist MonitorState
+      value:
+        type: script
+        input_transforms:
+          inputs:
+            type: javascript
+            expr: |-
+              ({
+                binance_spot_klines: results.fetch_klines
+              })
+          rules:
+            type: javascript
+            expr: flow_input.rules
+        path: f/binance/scripts/rules/evaluate_spot_price_change
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - connection
+    - symbol
+    - rules
+  properties:
+    connection:
+      type: object
+      description: Binance public market-data HTTP connection.
+      format: resource-http_connection
+    rules:
+      type: array
+      description: Price-change rules combined with OR semantics.
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id:
+            type: string
+            description: Stable rule identity used for alert state and deduplication.
+            pattern: ^[A-Za-z0-9_-]{1,64}$
+          direction:
+            type: string
+            enum:
+              - up
+              - down
+              - either
+          min_quote_volume:
+            type: number
+            description: Optional minimum quote-asset volume over the window.
+            minimum: 0
+          min_trade_count:
+            type: integer
+            description: Optional minimum trade count over the window.
+            minimum: 0
+          rearm_percent:
+            type: number
+            description: Recovery boundary; defaults to 80% of threshold_percent.
+            minimum: 0
+          threshold_percent:
+            type: number
+            exclusiveMinimum: 0
+          window_minutes:
+            type: integer
+            description: Start-to-end comparison window in minutes.
+            maximum: 998
+            minimum: 1
+        required:
+          - id
+          - window_minutes
+          - direction
+          - threshold_percent
+      maxItems: 50
+      minItems: 1
+    symbol:
+      type: string
+      description: Binance spot symbol, for example BTCUSDT.
+      pattern: ^[A-Za-z0-9]{2,30}$
+  required:
+    - connection
+    - symbol
+    - rules

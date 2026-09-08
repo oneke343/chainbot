@@ -1,0 +1,5 @@
+description: ''
+value:
+  integration_key: $var:u/oneke/flashcat
+  url: https://api.flashcat.cloud/event/push/alert/standard
+resource_type: flashduty

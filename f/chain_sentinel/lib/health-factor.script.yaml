@@ -1,0 +1,10 @@
+summary: Shared health-factor comparison and table helpers
+description: Import-only functions shared by Aave V4 and Morpho; not a
+  standalone monitor or Resource type.
+lock: '!inline f/chain_sentinel/lib/health-factor.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

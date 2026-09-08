@@ -1,0 +1,6 @@
+value:
+  base_url: https://api.morpho.org/graphql
+  bearer_token: ''
+  custom_headers: {}
+description: Public Morpho GraphQL API.
+resource_type: graphql

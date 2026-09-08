@@ -1,0 +1,9 @@
+summary: MonitorState helpers
+description: Shared Root Flow-scoped MonitorState types, validation, and storage functions.
+lock: '!inline f/chain_sentinel/lib/monitor-state.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

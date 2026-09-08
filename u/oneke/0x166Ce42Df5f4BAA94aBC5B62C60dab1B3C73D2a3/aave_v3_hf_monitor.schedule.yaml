@@ -1,0 +1,53 @@
+summary: Check Aave V3 health factors every minute
+description: Run the configured Aave V3 monitor instance once per minute.
+args:
+  aave_api: $res:f/aave/resources/aave_v3
+  user: '0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3'
+  chain_ids:
+    - 1
+    - 42161
+    - 43114
+    - 8453
+    - 56
+    - 42220
+    - 100
+    - 59144
+    - 1088
+    - 10
+    - 137
+    - 534352
+    - 1868
+    - 146
+    - 324
+    - 9745
+    - 57073
+    - 5000
+    - 4326
+    - 196
+    - 143
+  market_thresholds:
+    AaveV3BNB: '1.15'
+    AaveV3Ethereum: '1.15'
+    AaveV3Ink: '1.015'
+    AaveV3Mantle: '1.015'
+    AaveV3Monad: '1.015'
+    AaveV3Plasma: '1.015'
+  severity: warning
+  telegram_auth: $res:u/oneke/yeap-bot
+  telegram_chat_id: '-1004252768572'
+  flashduty_enabled: true
+  flashduty_destination: $res:u/oneke/flashcat
+  flashduty_alert_key: ''
+cron_version: v2
+enabled: true
+is_flow: true
+no_flow_overlap: false
+on_failure_exact: false
+on_failure_times: 1
+on_recovery_extra_args: {}
+on_recovery_times: 1
+on_success_extra_args: {}
+schedule: 0 */1 * * * *
+script_path: u/oneke/0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3/aave_v3_hf_monitor
+timezone: Asia/Shanghai
+ws_error_handler_muted: false
