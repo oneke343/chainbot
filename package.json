@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "bun build f/*/scripts/*/*.ts f/*/lib/*.ts --target=bun --external windmill-client --outdir=/tmp/chain-sentinel-windmill-build && wmill lint . --fail-on-warn --locks-required"
+    "check": "bun build f/*/scripts/*/*.ts f/*/lib/*.ts f/aerodrome/*__flow/*.ts --target=bun --external windmill-client --outdir=/tmp/chain-sentinel-windmill-build && wmill lint . --fail-on-warn --locks-required"
   },
   "devDependencies": {
+    "viem": "2.56.3",
     "bun-types": "^1.4.0",
     "typescript": "^7.0.2",
     "windmill-client": "^1.800.0"

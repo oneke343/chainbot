@@ -1,5 +1,6 @@
 defaultTs: bun
 includes:
+  - f/aerodrome/**
   - f/aave/**
   - f/binance/**
   - f/morpho/**
@@ -7,6 +8,7 @@ includes:
   - f/chain_sentinel/**
   - u/oneke/**
 excludes: [
+  "f/aerodrome/**/__vote_state.resource.yaml",
   "u/**/**/__monitor_state.resource.yaml"
 ]
 skipVariables: true

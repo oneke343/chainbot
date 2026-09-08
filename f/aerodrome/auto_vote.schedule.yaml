@@ -1,0 +1,12 @@
+summary: veAERO weekly voting window
+schedule: '0 */10 21,22 * * 3'
+timezone: UTC
+enabled: false
+script_path: f/aerodrome/auto_vote_optimizer
+is_flow: true
+no_flow_overlap: true
+args:
+  walletAddresses: []
+  dryRun: true
+  signerVariablePaths: {}
+  options: {}
