@@ -5,10 +5,49 @@ schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    inputs: {type: object, format: resource-record}
+    default_rules:
+      type: object
+      default: {}
+      format: resource-market_risk_rules
+    inputs:
+      type: object
+      default: null
+      format: resource-result
+      properties:
+        markets:
+          type: object
+          description: ''
+          properties:
+            items:
+              type: object
+              description: ''
+              format: resource-array
+            pageInfo:
+              type: object
+              description: ''
+              properties:
+                count:
+                  type: number
+                  description: ''
+                countTotal:
+                  type: number
+                  description: ''
+                limit:
+                  type: number
+                  description: ''
+                skip:
+                  type: number
+                  description: ''
     market_ids:
       type: array
-      items: {type: string, pattern: '^0x[0-9a-fA-F]{64}$'}
-    default_rules: {type: object, default: {}, format: resource-record}
-    market_rules: {type: object, default: {}, format: resource-record}
-  required: [inputs, market_ids]
+      default: null
+      items:
+        type: string
+      originalType: string[]
+    market_rules:
+      type: object
+      default: {}
+      format: resource-record
+  required:
+    - inputs
+    - market_ids

@@ -17,6 +17,7 @@ import { main as alertPolicy } from "../f/chain_sentinel/scripts/alert_policies/
 import { main as telegram } from "../f/chain_sentinel/scripts/destinations/send_telegram.ts";
 import { sparkHealthAdapter } from "../f/spark/scripts/rules/evaluate_spark_health.ts";
 import { main as sparkSource } from "../f/spark/scripts/sources/spark_user_positions.ts";
+import { normalizeAaveV3MarketRisk } from "../f/aave/scripts/rules/evaluate_aave_v3_market_risk.ts";
 
 const api = { base_url: "https://example.test/graphql" };
 const user = `0x${"1".repeat(40)}`;
@@ -220,6 +221,39 @@ test("market risk evaluates independent metrics and rearms each market signal", 
     bad_debt_usd: 0, warnings: [] }], rules, {}, first.states);
   assert.equal(safe.output.fields.active_findings.length, 0);
   assert.equal(evaluateMarketRisk([snapshot], rules, {}, safe.states).output.messages.length, 4);
+});
+
+test("market risk skips cap rules when a market has no configured cap", () => {
+  const result = evaluateMarketRisk([{
+    id: "1:uncapped", protocol: "Aave", chain_id: 1, market: "Ethereum / uncapped",
+    observed_at: "2026-09-05T00:00:00.000Z", liquidity_usd: 200, utilization_percent: 50,
+  }], {
+    max_supply_cap_used_percent: 90,
+    max_borrow_cap_used_percent: 90,
+  });
+  assert.equal(result.output.matched, false);
+  assert.deepEqual(result.output.fields.active_findings, []);
+});
+
+test("Aave V3 market risk calculates cap usage in token units on both sides", () => {
+  const [market] = normalizeAaveV3MarketRisk({ markets: [{
+    name: "Main", address, chain: { chainId: 1, name: "Ethereum" },
+    reserves: [{
+      underlyingToken: { address, symbol: "TOKEN" }, usdExchangeRate: "2",
+      supplyInfo: {
+        total: { value: "100" },
+        supplyCap: { amount: { value: "200" }, usd: "400" },
+      },
+      borrowInfo: {
+        total: { amount: { value: "50" }, usd: "100" },
+        availableLiquidity: { amount: { value: "50" }, usd: "100" },
+        utilizationRate: { value: "0.5" },
+        borrowCap: { amount: { value: "100" }, usd: "200" },
+      },
+    }],
+  }] });
+  assert.equal(market.supply_cap_used_percent, 50);
+  assert.equal(market.borrow_cap_used_percent, 50);
 });
 
 test("message policy bounds output and summarizes overflow", () => {

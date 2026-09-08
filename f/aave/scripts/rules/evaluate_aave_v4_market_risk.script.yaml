@@ -5,7 +5,22 @@ schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    inputs: {type: object, format: resource-record}
-    default_rules: {type: object, default: {}, format: resource-record}
-    market_rules: {type: object, default: {}, format: resource-record}
-  required: [inputs]
+    default_rules:
+      type: object
+      default: {}
+      format: resource-market_risk_rules
+    inputs:
+      type: object
+      default: null
+      format: resource-result
+      properties:
+        spokes:
+          type: object
+          description: ''
+          format: resource-array
+    market_rules:
+      type: object
+      default: {}
+      format: resource-record
+  required:
+    - inputs

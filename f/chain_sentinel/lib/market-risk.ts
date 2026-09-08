@@ -99,6 +99,7 @@ export function evaluateMarketRisk(
     ] as const;
     for (const [kind, value, limit, match] of numeric) {
       if (limit === undefined) continue;
+      if (value === undefined && (kind === "supply_cap" || kind === "borrow_cap")) continue;
       if (value === undefined || !Number.isFinite(value)) throw new Error(`${kind} is missing for ${market.market}`);
       add(market, {
         id: `${kind}:${market.id}`, kind, market_id: market.id, market: market.market,
