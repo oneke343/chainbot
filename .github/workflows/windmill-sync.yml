@@ -1,0 +1,169 @@
+name: Windmill sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "f/**"
+      - "u/**"
+      - "wmill.yaml"
+      - "wmill-lock.yaml"
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: Sync direction
+        required: true
+        default: pull
+        type: choice
+        options:
+          - pull
+          - push
+      allow_deletions:
+        description: Allow a manual push to delete Windmill objects
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windmill-sync-main
+  cancel-in-progress: false
+
+env:
+  WMILL_BASE_URL: https://windmill.yeap.capital
+  WMILL_WORKSPACE: chainbot
+  WMILL_CLI_VERSION: 1.799.0
+
+jobs:
+  push-to-windmill:
+    name: GitHub to Windmill
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.direction == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Windmill CLI
+        run: npm install --global "windmill-cli@${WMILL_CLI_VERSION}"
+
+      - name: Verify credentials
+        env:
+          WMILL_TOKEN: ${{ secrets.WMILL_TOKEN }}
+        run: |
+          if [ -z "${WMILL_TOKEN:-}" ]; then
+            echo "Repository secret WMILL_TOKEN is required" >&2
+            exit 1
+          fi
+
+      - name: Validate local Windmill project
+        run: wmill lint . --fail-on-warn --locks-required
+
+      - name: Preview push and reject unexpected deletions
+        env:
+          WMILL_TOKEN: ${{ secrets.WMILL_TOKEN }}
+          ALLOW_DELETIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletions || false }}
+        run: |
+          set -euo pipefail
+          plan="${RUNNER_TEMP}/windmill-push-plan.json"
+          wmill \
+            --base-url "${WMILL_BASE_URL}" \
+            --token "${WMILL_TOKEN}" \
+            --workspace "${WMILL_WORKSPACE}" \
+            sync push \
+            --dry-run \
+            --skip-secrets \
+            --skip-branch-validation \
+            --json-output > "${plan}"
+          jq . "${plan}"
+          deletions="$(jq '[.changes[]? | select(.type == "deleted")] | length' "${plan}")"
+          if [ "${deletions}" -gt 0 ] && [ "${ALLOW_DELETIONS}" != "true" ]; then
+            echo "Push would delete ${deletions} Windmill object(s). Run this workflow manually with allow_deletions enabled after reviewing the plan." >&2
+            exit 1
+          fi
+
+      - name: Push to Windmill
+        env:
+          WMILL_TOKEN: ${{ secrets.WMILL_TOKEN }}
+        run: |
+          wmill \
+            --base-url "${WMILL_BASE_URL}" \
+            --token "${WMILL_TOKEN}" \
+            --workspace "${WMILL_WORKSPACE}" \
+            sync push \
+            --yes \
+            --skip-secrets \
+            --skip-branch-validation \
+            --lint \
+            --locks-required \
+            --json-output
+
+  pull-from-windmill:
+    name: Windmill to GitHub
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.direction == 'pull')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Windmill CLI
+        run: npm install --global "windmill-cli@${WMILL_CLI_VERSION}"
+
+      - name: Verify credentials
+        env:
+          WMILL_TOKEN: ${{ secrets.WMILL_TOKEN }}
+        run: |
+          if [ -z "${WMILL_TOKEN:-}" ]; then
+            echo "Repository secret WMILL_TOKEN is required" >&2
+            exit 1
+          fi
+
+      - name: Pull from Windmill
+        env:
+          WMILL_TOKEN: ${{ secrets.WMILL_TOKEN }}
+        run: |
+          wmill \
+            --base-url "${WMILL_BASE_URL}" \
+            --token "${WMILL_TOKEN}" \
+            --workspace "${WMILL_WORKSPACE}" \
+            sync pull \
+            --yes \
+            --skip-secrets \
+            --skip-branch-validation \
+            --json-output
+
+      - name: Validate pulled project
+        run: wmill lint . --fail-on-warn --locks-required
+
+      - name: Commit Windmill changes
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- f u wmill-lock.yaml)" ]; then
+            echo "Windmill workspace is already represented by main"
+            exit 0
+          fi
+          git add --all -- f u wmill-lock.yaml
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(windmill): sync workspace changes"
+          git pull --rebase origin main
+          git push origin HEAD:main

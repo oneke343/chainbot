@@ -200,3 +200,20 @@ npm run check
 
 这些命令不会部署。需要运行真实 Flow 时使用本地 `wmill flow preview`；只有明确部署时才执行
 项目所配置的部署流程。
+
+## GitHub 与 Windmill 双向同步
+
+`.github/workflows/windmill-sync.yml` 维护两条自动化链路：
+
+- `main` 分支中的 `f/**`、`u/**`、`wmill.yaml` 或 `wmill-lock.yaml` 更新后，自动执行
+  `wmill sync push`；
+- 每 10 分钟执行一次 `wmill sync pull`，如果 Windmill workspace 有更新，则以
+  `github-actions[bot]` 身份提交回 `main`。
+
+GitHub 仓库必须配置 Actions secret `WMILL_TOKEN`。同步固定连接
+`https://windmill.yeap.capital` 的 `chainbot` workspace，secret 只保存 Windmill token。
+
+自动 push 如果检测到会删除 Windmill 对象，将停止而不部署。确认删除符合预期后，在 GitHub
+Actions 页面手动运行 `Windmill sync`，选择 `push` 并启用 `allow_deletions`。如果 `main`
+开启了禁止 Actions 直接 push 的分支保护，需要允许 GitHub Actions 写入，或将 pull job 改为
+创建 Pull Request。
