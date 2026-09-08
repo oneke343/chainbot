@@ -1,7 +1,6 @@
-summary: Evaluate Morpho health-factor thresholds and save MonitorState
-description: Per-market threshold overrides with a default for all remaining
-  borrowing positions.
-lock: '!inline f/morpho/scripts/rules/evaluate_morpho_health.script.lock'
+summary: Evaluate SparkLend position risks and save MonitorState
+description: Normalize SparkLend Pool results and run the common position-risk engine.
+lock: '!inline f/spark/scripts/rules/evaluate_spark_health.script.lock'
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
@@ -16,19 +15,28 @@ schema:
       originalType: number[]
     default_threshold:
       type: number
-      description: Default HF threshold for markets without an override.
+      description: ''
       default: null
       exclusiveMinimum: 0
     inputs:
       type: object
-      description: Native GraphQL Source result containing chains and marketPositions.
+      description: ''
       default: null
-      format: resource-record
+      properties:
+        accounts:
+          type: object
+          description: ''
+          format: resource-array
+        observed_at:
+          type: string
+          description: ''
+          originalType: string
+        user:
+          type: string
+          description: ''
+          originalType: string
     market_thresholds:
       type: object
-      additionalProperties:
-        type: number
-        exclusiveMinimum: 0
       description: ''
       default: {}
       format: resource-record
@@ -86,7 +94,6 @@ schema:
       description: ''
       default: null
       originalType: string
-      pattern: ^0x[0-9a-fA-F]{40}$
   required:
     - inputs
     - user

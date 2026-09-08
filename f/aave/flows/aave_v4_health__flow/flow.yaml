@@ -54,6 +54,12 @@ value:
           market_thresholds:
             type: javascript
             expr: flow_input.market_thresholds ?? {}
+          risk_rules:
+            type: javascript
+            expr: flow_input.risk_rules ?? []
+          message_policy:
+            type: javascript
+            expr: flow_input.message_policy ?? {}
         path: f/aave/scripts/rules/evaluate_aave_v4_health
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
@@ -64,6 +70,8 @@ schema:
     - default_threshold
     - market_thresholds
     - chain_ids
+    - risk_rules
+    - message_policy
   properties:
     api:
       type: object
@@ -89,6 +97,14 @@ schema:
       description: 'Keys from fields.positions: market_name (Ethereum / Main), or name
         for an exact Spoke. Unknown keys are reported in unused_thresholds.'
       default: {}
+    risk_rules:
+      type: array
+      default: []
+      items:
+        $ref: '#/$defs/risk_rule'
+    message_policy:
+      $ref: '#/$defs/message_policy'
+      default: {max_messages: 20, overflow: summary}
     user:
       type: string
       pattern: ^0x[0-9a-fA-F]{40}$
@@ -96,3 +112,20 @@ schema:
     - api
     - user
     - default_threshold
+  $defs:
+    risk_rule:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
+        kind: {type: string, enum: [health_factor_drop, debt_growth, liquidation_buffer]}
+        threshold_percent: {type: number, exclusiveMinimum: 0}
+        window_minutes: {type: integer, minimum: 1, maximum: 1440}
+        min_debt_usd: {type: number, minimum: 0}
+      required: [id, kind, threshold_percent]
+    message_policy:
+      type: object
+      additionalProperties: false
+      properties:
+        max_messages: {type: integer, minimum: 1, maximum: 100, default: 20}
+        overflow: {type: string, enum: [summary, truncate], default: summary}

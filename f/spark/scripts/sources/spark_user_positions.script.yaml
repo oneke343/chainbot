@@ -1,0 +1,21 @@
+summary: Read SparkLend user positions
+description: Read getUserAccountData from configured SparkLend Pools over JSON-RPC.
+lock: '!inline f/spark/scripts/sources/spark_user_positions.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    config:
+      type: object
+      description: ''
+      default: null
+      format: resource-spark_lend
+    user:
+      type: string
+      description: ''
+      default: null
+      originalType: string
+  required:
+    - config
+    - user

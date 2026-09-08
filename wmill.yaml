@@ -3,6 +3,7 @@ includes:
   - f/aave/**
   - f/binance/**
   - f/morpho/**
+  - f/spark/**
   - f/chain_sentinel/**
   - u/oneke/**
 excludes: [

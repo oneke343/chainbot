@@ -110,7 +110,8 @@ Trigger
 Resource 的 read-modify-write，没有数据库事务；同一 Root Flow 并发执行可能覆盖状态。
 
 Source 出错时 Flow 应失败且不更新状态。Destination 应在 Root Flow 中单独配置 retry，从而用
-当前 Flow 已经生成的 AlertMessage 重试投递。
+当前 Flow 已经生成的 AlertMessage 数组重试投递。Root Flow 不再为消息创建 `forloopflow`，
+批量拆分属于 Destination 内部实现。
 
 ## 已配置的用户实例
 

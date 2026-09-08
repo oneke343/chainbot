@@ -1,160 +1,137 @@
 //native
 
+import { getMonitorState, setMonitorState } from "../../../chain_sentinel/lib/monitor-state.ts";
 import {
-  setMonitorState,
-  type MonitorOutput,
-} from "../../../chain_sentinel/lib/monitor-state.ts";
-import { renderMessage } from "../../../chain_sentinel/lib/render-message.ts";
-
-const ALERT_TITLE = "Aave health factor below threshold";
-const ALERT_DESCRIPTION = `Aave account: {{states.user}}
-
-One or more configured markets are below their health-factor thresholds.
-
-{{states.marketTable}}
-
-Triggered markets: {{states.breachedMarkets}}`;
+  evaluatePositionHealth,
+  defineHealthPositionAdapter,
+  renderPositionHealthMessages,
+  type HealthInputs,
+  type PositionMessagePolicy,
+  type PositionRiskRule,
+  type PositionHealthStates,
+} from "../../../chain_sentinel/lib/health-factor.ts";
 
 type MarketThreshold = string | number;
 
 type AaveMarket = {
   name?: string;
+  chain?: { chainId?: number; name?: string } | null;
   userState?: {
     healthFactor?: string | number | null;
+    totalDebtBase?: string | number;
+    totalCollateralBase?: string | number;
   } | null;
 };
 
-type MarketInspection = {
-  found: boolean;
-  threshold: string;
-  healthFactor: string | null;
-  breached: boolean;
-};
-
 type AaveHealthInputs = {
-  aave_market_positions: {
-    markets?: AaveMarket[];
-  };
+  aave_market_positions: { markets?: AaveMarket[] };
 };
 
-type AaveHealthStates = {
-  user: string;
-  breachedMarkets: string[];
-  marketTable: string;
-};
-
-type AaveHealthOutput = MonitorOutput & {
-  fields: {
-    user: string;
-    markets: Record<string, MarketInspection>;
-  };
-};
-
-export type AaveHealthRuleResult = {
-  states: AaveHealthStates;
-  output: AaveHealthOutput;
-};
-
-function escapeMarkdownCell(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
-}
-
-function renderMarketTable(markets: Record<string, MarketInspection>): string {
-  const header = [
-    "| Market | Current HF | Threshold | Status |",
-    "| --- | ---: | ---: | --- |",
-  ];
-  const rows = Object.entries(markets).map(([name, market]) => {
-    const status = !market.found
-      ? "NOT FOUND"
-      : market.healthFactor === null
-      ? "NO HEALTH FACTOR"
-      : market.breached
-      ? "BELOW THRESHOLD"
-      : "HEALTHY";
-    return `| ${escapeMarkdownCell(name)} | ${market.healthFactor ?? "N/A"} | ${market.threshold} | ${status} |`;
+export function normalizeAaveV3Positions(
+  inputs: AaveHealthInputs,
+  user: string,
+  market_thresholds: Record<string, MarketThreshold>,
+): HealthInputs {
+  const markets = inputs?.aave_market_positions?.markets;
+  if (!Array.isArray(markets)) throw new Error("Missing Aave V3 markets");
+  const selected = markets.filter((market) => market.name
+    && Object.hasOwn(market_thresholds, market.name));
+  const chains = new Map<number, string>();
+  const positions = selected.map((market) => {
+    const name = market.name!;
+    const chainId = market.chain?.chainId;
+    const chainName = market.chain?.name;
+    if (!Number.isSafeInteger(chainId) || Number(chainId) <= 0 || !chainName) {
+      throw new Error(`Invalid Aave V3 chain for ${name}`);
+    }
+    chains.set(chainId!, chainName);
+    const healthFactor = market.userState?.healthFactor;
+    if (healthFactor === undefined) throw new Error(`Missing Aave V3 health factor for ${name}`);
+    const debt = market.userState?.totalDebtBase ?? null;
+    return {
+      id: `${chainId}:${name.toLowerCase()}`,
+      name,
+      market_name: name,
+      chain_id: chainId!,
+      health_factor: healthFactor ?? null,
+      has_debt: healthFactor !== null || (debt !== null && Number(debt) > 0),
+      debt_usd: debt,
+      collateral_usd: market.userState?.totalCollateralBase ?? null,
+    };
   });
-  return [...header, ...rows].join("\n");
+  return {
+    user,
+    observed_at: new Date().toISOString(),
+    chains: [...chains].map(([id, name]) => ({ id, name })),
+    positions,
+  };
 }
+
+export const aaveV3HealthAdapter = defineHealthPositionAdapter<AaveHealthInputs>({
+  protocol: "Aave V3",
+  normalize: (source, context) => normalizeAaveV3Positions(
+    source, context.user, Object.fromEntries((context.market_names ?? []).map((name) => [name, 1])),
+  ),
+});
 
 export function evaluateAaveHealth(
   inputs: AaveHealthInputs,
   user: string,
   market_thresholds: Record<string, MarketThreshold>,
-): AaveHealthRuleResult {
-  const thresholds = market_thresholds && typeof market_thresholds === "object"
-    ? market_thresholds
-    : {};
-  const markets = Array.isArray(inputs?.aave_market_positions?.markets)
-    ? inputs.aave_market_positions.markets
-    : [];
-  const inspected: Record<string, MarketInspection> = Object.fromEntries(
-    Object.entries(thresholds).map(([name, threshold]) => [name, {
-      found: false,
-      threshold: String(threshold),
-      healthFactor: null,
-      breached: false,
-    }]),
-  );
-  let matched = false;
-
-  for (const market of markets) {
-    const name = market.name ?? "";
-    if (!Object.prototype.hasOwnProperty.call(thresholds, name)) continue;
-
-    const threshold = Number(thresholds[name]);
-    const rawHealthFactor = market.userState?.healthFactor;
-    const healthFactor = Number(rawHealthFactor);
-    const breached = Number.isFinite(threshold)
-      && threshold > 0
-      && rawHealthFactor !== null
-      && rawHealthFactor !== undefined
-      && Number.isFinite(healthFactor)
-      && healthFactor > 0
-      && healthFactor < threshold;
-
-    inspected[name] = {
-      found: true,
-      threshold: String(thresholds[name]),
-      healthFactor: rawHealthFactor == null ? null : String(rawHealthFactor),
-      breached,
-    };
-    matched ||= breached;
+  previous_states: unknown = {},
+  risk_rules: PositionRiskRule[] = [],
+  message_policy: PositionMessagePolicy = {},
+) {
+  if (!market_thresholds || typeof market_thresholds !== "object" || Array.isArray(market_thresholds)) {
+    throw new Error("market_thresholds must be an object");
   }
-
-  const states: AaveHealthStates = {
-    user,
-    breachedMarkets: Object.entries(inspected)
-      .filter(([, market]) => market.breached)
-      .map(([name]) => name),
-    marketTable: renderMarketTable(inspected),
-  };
-  const message = matched
-    ? {
-      title: ALERT_TITLE,
-      description: renderMessage(ALERT_DESCRIPTION, { inputs, states }),
-    }
-    : undefined;
-
-  return {
-    states,
-    output: {
-      matched,
-      ...(message ? { message } : {}),
-      fields: { user, markets: inspected },
+  const normalized = aaveV3HealthAdapter.normalize(inputs, {
+    user, market_names: Object.keys(market_thresholds),
+  });
+  // Every selected V3 market has an explicit override. The fallback is never used.
+  const inspection = evaluatePositionHealth(
+    normalized, 1, market_thresholds, previous_states, risk_rules,
+  );
+  const messages = renderPositionHealthMessages(
+      "Aave V3", user, normalized.observed_at, inspection.triggered_findings,
+      message_policy,
+    );
+  const output: RT.MonitorOutput = {
+    matched: messages.length > 0,
+    messages,
+    fields: {
+      protocol: "aave-v3",
+      user,
+      observed_at: normalized.observed_at,
+      chains: normalized.chains,
+      positions: inspection.positions,
+      triggered_findings: inspection.triggered_findings,
+      active_findings: inspection.active_findings,
+      unused_thresholds: inspection.unused_thresholds,
+      triggered_finding_count: inspection.triggered_findings.length,
+      message_count: messages.length,
     },
   };
+  return { states: inspection.states, output };
 }
 
 export async function main(
   inputs: AaveHealthInputs,
   user: string,
   market_thresholds: Record<string, MarketThreshold>,
-): Promise<AaveHealthOutput> {
+  risk_rules: Array<{
+    id: string;
+    kind: "health_factor_drop" | "debt_growth" | "liquidation_buffer";
+    threshold_percent: number;
+    window_minutes?: number;
+    min_debt_usd?: number;
+  }> = [],
+  message_policy: { max_messages?: number; overflow?: "summary" | "truncate" } = {},
+): Promise<RT.MonitorOutput> {
+  evaluateAaveHealth(inputs, user, market_thresholds, {}, risk_rules, message_policy);
+  const previous = await getMonitorState<AaveHealthInputs, PositionHealthStates>();
   const { states, output } = evaluateAaveHealth(
-    inputs,
-    user,
-    market_thresholds,
+    inputs, user, market_thresholds, previous.states, risk_rules, message_policy,
   );
   await setMonitorState(inputs, states, output);
   return output;

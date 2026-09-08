@@ -45,12 +45,16 @@ aave_v4_chains.gql → aave_v4_user_positions.gql → evaluate_aave_v4_health �
   不写死支持的网络。
 - 当前 `userPositions` 直接返回列表，没有分页参数，不需要 Morpho 的 `first: 1000`
   或分页数量检查。HF 取 `healthFactor.current`，不自行重算协议风险公式。
-- Rule 使用市场实际生效阈值判断 `HF < threshold`，任何仓位命中则 `matched = true`。
+- Rule 使用市场实际生效阈值判断 `HF < threshold`。通用仓位状态机只在仓位首次跌破阈值、
+  恢复后再次跌破，或者阈值配置变化后仍处于危险状态时产生新的候选消息。
   等于阈值不命中，HF 为 0 会命中。比较保留 API 十进制精度，消息显示才舍入。
 - HF 为 null 且 API 债务金额为 0 的仓位视为无借款；非 null HF 即使显示债务舍入为 0 也保留。
   有债务但 HF 为 null、缺字段、非法 HF，以及 GraphQL 部分错误都会失败，不当成健康。
-- Rule 通过本目录模板和通用 `renderMessage` 生成描述，调用 `setMonitorState` 保存
-  `{inputs, states, outputs}`，只返回 `{matched, message?, fields}`。不需要读历史状态。
+- 协议 Rule 将数据规范化为通用 `HealthInputs`，读取旧 MonitorState，调用通用 HF 状态机，
+  再保存 `{inputs, states, outputs}`。每个新触发仓位产生一个候选消息，返回
+  `{matched, messages, fields}`。
+- Aave V3 Source 同时读取 `totalDebtBase` 和 `totalCollateralBase`，因此也能使用债务增长规则；
+  Aave V4 使用 API 的 USD value。趋势规则首次运行只记录基线，达到配置窗口后再判断。
 - 字段整理、网络与持仓地址校验都放在现有 Rule 内，不新增转换节点。MonitorState 的
   `inputs` 保存两个 GraphQL Source 合并后的原始 `chains` 和 `userPositions`；
   标准化后的仓位和实际生效阈值在输出 `fields.positions` 中。
@@ -60,8 +64,20 @@ aave_v4_chains.gql → aave_v4_user_positions.gql → evaluate_aave_v4_health �
 ## 用户组合与限制
 
 用户根 Flow 调用这个 Monitor Flow，然后连接 `matched_output` 和需要的 Destination。
-Trigger、severity、发送目的地不属于 Monitor 参数。现有 `matched_output` 会在每一次
-`matched = true` 时发送一次消息，不自带冷却和去重，也不发送恢复通知。
+Trigger、severity、发送目的地不属于 Monitor 参数。去重由 Position Rule 的状态机完成；
+`matched_output` 可以把本次多个候选消息转换为多个 AlertMessage，Root Flow 将整个数组交给
+Destination 批量发送，不再包含 `forloopflow`。
+
+## Position Monitor 扩展边界
+
+Aave V3/V4 都显式实现 `HealthPositionAdapter`。未来其他协议接入时，协议目录只负责：
+
+1. 用原生 GraphQL 或其他 Source 获取用户仓位；
+2. 为每个风险账户产生稳定 `position.id`；
+3. 转换成通用 `HealthInputs`；
+4. 调用通用 HF 状态机并渲染协议名称。
+
+阈值覆盖、HF 下降、债务增长、清算缓冲、rearm 和消息上限保持在 `chain_sentinel`。
 
 状态位于 `{ROOT_FLOW_PATH}/__monitor_state`。不同用户、不同协议实例必须使用不同根 Flow，
 不要把两个会保存状态的 Monitor 子 Flow 塞入同一根 Flow；避免同一根 Flow 并发写入。

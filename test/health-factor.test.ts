@@ -4,10 +4,15 @@ import test from "node:test";
 import * as wmill from "windmill-client";
 import { evaluateAaveV4Health, normalizeAaveV4Positions, main as aaveRule } from "../f/aave/scripts/rules/evaluate_aave_v4_health.ts";
 import { evaluateMorphoHealth, normalizeMorphoPositions, main as morphoRule } from "../f/morpho/scripts/rules/evaluate_morpho_health.ts";
-import { inspectHealthFactors, type HealthInputs, type HealthPosition } from "../f/chain_sentinel/lib/health-factor.ts";
+import {
+  evaluatePositionHealth, inspectHealthFactors, renderPositionHealthMessages,
+  type HealthInputs, type HealthPosition, type PositionRiskRule,
+} from "../f/chain_sentinel/lib/health-factor.ts";
 import { main as graphql } from "../f/chain_sentinel/scripts/sources/graphql.ts";
 import { main as alertPolicy } from "../f/chain_sentinel/scripts/alert_policies/matched_output.ts";
 import { main as telegram } from "../f/chain_sentinel/scripts/destinations/send_telegram.ts";
+import { sparkHealthAdapter } from "../f/spark/scripts/rules/evaluate_spark_health.ts";
+import { main as sparkSource } from "../f/spark/scripts/sources/spark_user_positions.ts";
 
 const api = { base_url: "https://example.test/graphql" };
 const user = `0x${"1".repeat(40)}`;
@@ -38,12 +43,14 @@ for (const [name, evaluate] of [["aave-v4", evaluateAaveV4Health], ["morpho", ev
     assert.equal(inspected[0].chain_id, 8453);
     assert.equal(inspected[0].threshold_source, "default");
     assert.equal(inspected[1].threshold, "1.05");
-    assert.match(output.message!.description, /1.1400/);
-    assert.deepEqual(Object.keys(output).sort(), ["fields", "matched", "message"]);
+    assert.equal(output.messages?.length, 1);
+    assert.match(output.messages![0].description, /1.1400/);
+    assert.deepEqual(Object.keys(output).sort(), ["fields", "matched", "messages"]);
     const decision = await alertPolicy(output, "warning");
-    assert.equal(decision.message!.severity, "warning");
-    assert.equal(decision.message!.title, output.message!.title);
-    assert.equal(evaluate(data, 1.15, { "Ethereum / Main": 1.05 }).output.matched, true);
+    assert.equal(decision.messages[0].severity, "warning");
+    assert.equal(decision.messages[0].title, output.messages![0].title);
+    const first = evaluate(data, 1.15, { "Ethereum / Main": 1.05 });
+    assert.equal(evaluate(data, 1.15, { "Ethereum / Main": 1.05 }, first.states).output.matched, false);
   });
 
   test(`${name}: zero, equality, decimal precision, recovery and closed positions`, () => {
@@ -52,7 +59,7 @@ for (const [name, evaluate] of [["aave-v4", evaluateAaveV4Health], ["morpho", ev
     assert.equal(evaluate(inputs([position({ health_factor: 1e21 })]), 1.15).output.matched, false);
     assert.equal(evaluate(inputs([position({ health_factor: "1.15" })]), 1.15).output.matched, false);
     assert.equal(evaluate(inputs([position({ health_factor: "1.149999999999999999" })]), "1.15").output.matched, true);
-    assert.equal(evaluate(inputs([position({ health_factor: "1.3" })]), 1.15).output.message, undefined);
+    assert.deepEqual(evaluate(inputs([position({ health_factor: "1.3" })]), 1.15).output.messages, []);
     const closed = evaluate(inputs([]), 1.15).output;
     assert.deepEqual(closed.fields.positions, []);
     assert.equal(closed.matched, false);
@@ -86,6 +93,99 @@ test("ambiguous short names fail; exact names select independently and unknown k
   assert.throws(() => inspectHealthFactors(inputs([a, a]), 1.15, {}), /duplicate/);
 });
 
+test("generic position health state deduplicates, rearms, and emits one message per position", () => {
+  const unsafe = inputs([
+    position({ id: "1:first", name: "Ethereum / First", market_name: "Ethereum / First" }),
+    position({ id: "1:second", name: "Ethereum / Second", market_name: "Ethereum / Second" }),
+  ]);
+  const first = evaluateMorphoHealth(unsafe, 1.15);
+  assert.equal(first.output.matched, true);
+  assert.equal(first.output.messages.length, 2);
+  assert.notEqual(
+    first.output.messages[0].fields?.finding_id,
+    first.output.messages[1].fields?.finding_id,
+  );
+
+  const repeated = evaluateMorphoHealth(unsafe, 1.15, {}, first.states);
+  assert.equal(repeated.output.matched, false);
+  assert.deepEqual(repeated.output.messages, []);
+  assert.equal((repeated.output.fields.active_findings as unknown[]).length, 2);
+
+  const safe = inputs([
+    position({ id: "1:first", name: "Ethereum / First", market_name: "Ethereum / First", health_factor: "1.3" }),
+    position({ id: "1:second", name: "Ethereum / Second", market_name: "Ethereum / Second", health_factor: "1.3" }),
+  ]);
+  const recovered = evaluateMorphoHealth(safe, 1.15, {}, repeated.states);
+  assert.equal(recovered.output.matched, false);
+  assert.deepEqual(recovered.output.fields.active_findings, []);
+
+  const triggeredAgain = evaluateMorphoHealth(unsafe, 1.15, {}, recovered.states);
+  assert.equal(triggeredAgain.output.matched, true);
+  assert.equal(triggeredAgain.output.messages.length, 2);
+});
+
+test("common engine evaluates HF drop, debt growth and liquidation buffer across runs", () => {
+  const rules: PositionRiskRule[] = [
+    { id: "hf_drop_5m", kind: "health_factor_drop", window_minutes: 5, threshold_percent: 10 },
+    { id: "debt_up_5m", kind: "debt_growth", window_minutes: 5, threshold_percent: 20 },
+    { id: "buffer_20", kind: "liquidation_buffer", threshold_percent: 20 },
+  ];
+  const firstInputs = inputs([position({ health_factor: "1.5", debt_usd: "100" })]);
+  const first = evaluatePositionHealth(firstInputs, 1.1, {}, {}, rules);
+  assert.equal(first.triggered_findings.length, 0);
+  assert.equal(first.states.history[position().id].length, 1);
+
+  const changed = {
+    ...firstInputs,
+    observed_at: "2026-09-05T00:05:00.000Z",
+    positions: [position({ health_factor: "1.2", debt_usd: "130" })],
+  };
+  const second = evaluatePositionHealth(changed, 1.1, {}, first.states, rules);
+  assert.deepEqual(second.triggered_findings.map((finding) => finding.rule_id), [
+    "hf_drop_5m", "debt_up_5m", "buffer_20",
+  ]);
+  assert.deepEqual(second.triggered_findings.map((finding) => finding.value), ["20", "30", "16.6667"]);
+  assert.equal(evaluatePositionHealth(changed, 1.1, {}, second.states, rules).triggered_findings.length, 0);
+});
+
+test("message policy bounds output and summarizes overflow", () => {
+  const findings = evaluatePositionHealth(inputs([
+    position({ id: "1:a", name: "A", market_name: "A" }),
+    position({ id: "1:b", name: "B", market_name: "B" }),
+    position({ id: "1:c", name: "C", market_name: "C" }),
+  ]), 1.15).triggered_findings;
+  const summarized = renderPositionHealthMessages("Test", user, inputs().observed_at, findings, {
+    max_messages: 2, overflow: "summary",
+  });
+  assert.equal(summarized.length, 2);
+  assert.equal(summarized[1].fields?.finding_kind, "summary");
+  assert.equal(summarized[1].fields?.omitted_findings, 2);
+  assert.equal(renderPositionHealthMessages("Test", user, inputs().observed_at, findings, {
+    max_messages: 2, overflow: "truncate",
+  }).length, 2);
+});
+
+test("Spark Source decodes getUserAccountData and adapter produces common positions", async (t) => {
+  const word = (value: bigint) => value.toString(16).padStart(64, "0");
+  const result = `0x${[150_00000000n, 100_00000000n, 0n, 0n, 0n, 12n * 10n ** 17n].map(word).join("")}`;
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    assert.equal(request.method, "eth_call");
+    assert.match(request.params[0].data, /^0xbf92857c/);
+    return Response.json({ jsonrpc: "2.0", id: 1, result });
+  });
+  const raw = await sparkSource({ markets: [{
+    name: "Main", chain_id: 1, chain_name: "Ethereum", pool_address: address,
+    rpc_url: "https://rpc.example.test", base_currency_decimals: 8,
+  }] }, user);
+  const normalized = sparkHealthAdapter.normalize(raw, { user, chain_ids: [1] });
+  assert.deepEqual(normalized.positions[0], {
+    id: `1:${address}`, name: `Ethereum / Main / ${address}`, market_name: "Ethereum / Main",
+    chain_id: 1, health_factor: "1.2", has_debt: true,
+    debt_usd: "100", collateral_usd: "150",
+  });
+});
+
 function aaveResult() {
   return {
     chains: [{ chainId: 1, name: "Ethereum" }, { chainId: 10, name: "OP Mainnet" }],
@@ -107,6 +207,9 @@ test("Aave native queries discover mainnets then request explicitly selected cha
   assert.match(positions, /\$chain_ids: \[ChainId!\]!/);
   assert.match(positions, /chainIds: \$chain_ids/);
   assert.match(positions, /healthFactor \{current\}/);
+  const v3 = readFileSync(new URL("../f/aave/scripts/sources/aave_market_positions.gql", import.meta.url), "utf8");
+  assert.match(v3, /totalDebtBase/);
+  assert.match(v3, /totalCollateralBase/);
 });
 
 test("Aave normalizes cross-network Spokes, preserving zero HF and excluding supply-only accounts", () => {
@@ -246,6 +349,7 @@ test("both Rules persist Source inputs and MonitorOutput under their respective 
   const saved: Array<{ path: string; value: unknown }> = [];
   t.mock.method(wmill.JobService, "getRootJobId", async () => "root-job");
   t.mock.method(wmill.JobService, "getJob", async () => ({ script_path: root }));
+  t.mock.method(wmill.ResourceService, "getResourceValueInterpolated", async () => undefined);
   t.mock.method(wmill.ResourceService, "existsResource", async () => false);
   t.mock.method(wmill.ResourceService, "createResource", async ({ requestBody }: {
     requestBody: { path: string; value: unknown; resource_type: string };
@@ -269,21 +373,23 @@ test("both Rules persist Source inputs and MonitorOutput under their respective 
   }
 });
 
-test("large snapshots keep full fields but produce one bounded Telegram message", async (t) => {
+test("large snapshots keep full fields and produce bounded per-position messages", async (t) => {
   const data = inputs(Array.from({ length: 150 }, (_, i) => position({
     id: `1:${marketId(i)}`, name: `Ethereum / Market ${i}`, market_name: `Ethereum / Market ${i}`,
   })));
   const { output } = evaluateMorphoHealth(data, 1.15);
   assert.equal((output.fields.positions as unknown[]).length, 150);
-  assert.ok(output.message!.description.length < 3500);
+  assert.equal(output.messages?.length, 20);
+  assert.equal(output.messages.at(-1)?.fields?.finding_kind, "summary");
+  assert.ok(output.messages!.every((message) => message.description.length < 3500));
   const fetch = t.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
     const { text } = JSON.parse(String(init.body));
     assert.ok(text.length <= 4096);
-    assert.match(text, /Below threshold: 150/);
+    assert.match(text, /Market: Ethereum \/ Market 0/);
     assert.match(text, /Full fields/);
     return Response.json({ ok: true });
   });
-  const { message } = await alertPolicy(output);
-  await telegram({ token: "test-only" }, "test-only", message);
+  const { messages } = await alertPolicy(output);
+  await telegram({ token: "test-only" }, "test-only", [messages[0]]);
   assert.equal(fetch.mock.callCount(), 1);
 });

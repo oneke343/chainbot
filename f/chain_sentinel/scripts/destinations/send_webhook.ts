@@ -1,11 +1,13 @@
 //native
 
+import { sendBatch } from "../../lib/destination-batch.ts";
+
 export async function main(
   connection: RT.HttpConnection,
   path: string,
-  message?: RT.AlertMessage | null,
+  messages?: RT.AlertMessage[] | null,
 ) {
-  if (!message) return;
+  if (!messages?.length) return;
   if (!connection?.base_url) throw new Error("connection.base_url is required");
   const base = new URL(connection.base_url);
   const normalizedBase = base.href.endsWith("/") ? base : new URL(`${base.href}/`);
@@ -14,14 +16,17 @@ export async function main(
   const headers = new Headers({ "Content-Type": "application/json", ...connection.headers });
   if (connection.bearer_token) headers.set("Authorization", `Bearer ${connection.bearer_token}`);
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(message),
+  const results = await sendBatch(messages, async (message) => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(message),
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Webhook delivery failed (${response.status}): ${responseText.slice(0, 500)}`);
+    }
+    return { delivered: true };
   });
-  const responseText = await response.text();
-  if (!response.ok) {
-    throw new Error(`Webhook delivery failed (${response.status}): ${responseText.slice(0, 500)}`);
-  }
-  return { destination: "webhook", delivered: true };
+  return { destination: "webhook", delivered: results.length, results };
 }

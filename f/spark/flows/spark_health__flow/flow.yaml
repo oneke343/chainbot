@@ -1,0 +1,143 @@
+summary: Monitor SparkLend position health
+description: Read configured SparkLend markets over RPC, normalize positions,
+  and evaluate common position-risk rules.
+value:
+  modules:
+    - id: sources
+      summary: Read SparkLend markets over RPC
+      value:
+        type: script
+        input_transforms:
+          config:
+            type: javascript
+            expr: flow_input.config
+          user:
+            type: javascript
+            expr: flow_input.user
+        path: f/spark/scripts/sources/spark_user_positions
+      retry:
+        constant:
+          attempts: 2
+          seconds: 2
+      timeout:
+        type: static
+        value: 120
+    - id: rules
+      summary: Evaluate and persist common position risks
+      value:
+        type: script
+        input_transforms:
+          chain_ids:
+            type: javascript
+            expr: flow_input.chain_ids ?? []
+          default_threshold:
+            type: javascript
+            expr: flow_input.default_threshold
+          inputs:
+            type: javascript
+            expr: results.sources
+          market_thresholds:
+            type: javascript
+            expr: flow_input.market_thresholds ?? {}
+          message_policy:
+            type: javascript
+            expr: flow_input.message_policy ?? {}
+          risk_rules:
+            type: javascript
+            expr: flow_input.risk_rules ?? []
+          user:
+            type: javascript
+            expr: flow_input.user
+        path: f/spark/scripts/rules/evaluate_spark_health
+schema:
+  $defs:
+    message_policy:
+      type: object
+      additionalProperties: false
+      properties:
+        max_messages:
+          type: integer
+          default: 20
+          maximum: 100
+          minimum: 1
+        overflow:
+          type: string
+          default: summary
+          enum:
+            - summary
+            - truncate
+    risk_rule:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,64}$
+        kind:
+          type: string
+          enum:
+            - health_factor_drop
+            - debt_growth
+            - liquidation_buffer
+        min_debt_usd:
+          type: number
+          minimum: 0
+        threshold_percent:
+          type: number
+          exclusiveMinimum: 0
+        window_minutes:
+          type: integer
+          maximum: 1440
+          minimum: 1
+      required:
+        - id
+        - kind
+        - threshold_percent
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order:
+    - config
+    - user
+    - default_threshold
+    - market_thresholds
+    - chain_ids
+    - risk_rules
+    - message_policy
+  properties:
+    chain_ids:
+      type: array
+      default: []
+      items:
+        type: integer
+        minimum: 1
+      uniqueItems: true
+    config:
+      type: object
+      format: resource-spark_lend
+    default_threshold:
+      type: number
+      exclusiveMinimum: 0
+    market_thresholds:
+      type: object
+      additionalProperties:
+        oneOf:
+          - type: string
+          - type: number
+      default: {}
+    message_policy:
+      $ref: '#/$defs/message_policy'
+      default:
+        max_messages: 20
+        overflow: summary
+    risk_rules:
+      type: array
+      default: []
+      items:
+        $ref: '#/$defs/risk_rule'
+    user:
+      type: string
+      pattern: ^0x[0-9a-fA-F]{40}$
+  required:
+    - config
+    - user
+    - default_threshold

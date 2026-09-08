@@ -20,7 +20,7 @@ value:
             expr: flow_input.symbol
         path: f/binance/flows/spot_price_change
     - id: alert_policy
-      summary: Build one warning message for newly triggered rules
+      summary: Build alert messages for newly triggered rules
       value:
         type: script
         input_transforms:
@@ -32,7 +32,7 @@ value:
             expr: flow_input.severity
         path: f/chain_sentinel/scripts/alert_policies/matched_output
     - id: send_to_telegram
-      summary: Send the optional message to Telegram
+      summary: Send alert messages to Telegram
       value:
         type: script
         input_transforms:
@@ -42,9 +42,9 @@ value:
           chat_id:
             type: javascript
             expr: flow_input.telegram_chat_id
-          message:
+          messages:
             type: javascript
-            expr: results.alert_policy.message
+            expr: results.alert_policy.messages
         path: f/chain_sentinel/scripts/destinations/send_telegram
       retry:
         exponential:

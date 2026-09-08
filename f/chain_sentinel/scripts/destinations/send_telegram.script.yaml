@@ -1,5 +1,5 @@
-summary: Send an alert to Telegram
-description: Reusable Telegram destination for the common monitor alert envelope.
+summary: Send alert messages to Telegram
+description: Reusable batch Telegram destination for common monitor alert envelopes.
 lock: '!inline f/chain_sentinel/scripts/destinations/send_telegram.script.lock'
 kind: script
 schema:
@@ -14,37 +14,14 @@ schema:
       type: string
       default: null
       originalType: string
-    message:
-      type: object
+    messages:
+      type: array
       description: ''
       default: null
-      format: resource-alert_message
-      properties:
-        description:
-          type: string
-          description: ''
-          originalType: string
-        fields:
-          type: object
-          description: ''
-          format: resource-record
-        severity:
-          type: string
-          description: ''
-          enum:
-            - info
-            - warning
-            - critical
-          originalType: enum
-        title:
-          type: string
-          description: ''
-          originalType: string
-      required:
-        - title
-        - description
-        - severity
-        - fields
+      items:
+        type: resource
+        resourceType: alert_message
+      originalType: resource[]
   required:
     - auth
     - chat_id

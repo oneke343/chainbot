@@ -1,6 +1,6 @@
-summary: Build one alert message from MonitorOutput
-description: Add severity to a Monitor-rendered title and description, without
-  knowing Destinations.
+summary: Build alert messages from MonitorOutput
+description: Add severity and fields to every Monitor-rendered candidate,
+  without knowing Destinations.
 lock: '!inline f/chain_sentinel/scripts/alert_policies/matched_output.script.lock'
 kind: script
 schema:

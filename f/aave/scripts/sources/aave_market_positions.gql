@@ -1,8 +1,14 @@
 query AaveMarketPositions($user: EvmAddress!, $chainIds: [ChainId!]!) {
   markets(request: { chainIds: $chainIds, user: $user }) {
     name
+    chain {
+      chainId
+      name
+    }
     userState {
       healthFactor
+      totalDebtBase
+      totalCollateralBase
     }
   }
 }

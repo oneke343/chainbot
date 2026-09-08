@@ -358,7 +358,7 @@ export function evaluateSpotPriceChange(
     states,
     output: {
       matched,
-      ...(message ? { message } : {}),
+      messages: message ? [message] : [],
       fields: {
         symbol: source.symbol,
         currentPrice,

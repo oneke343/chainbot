@@ -3,7 +3,7 @@
 import { normalizeMonitorOutput } from "../../lib/monitor-state.ts";
 
 export type AlertDecision = {
-  message?: RT.AlertMessage;
+  messages: RT.AlertMessage[];
 };
 
 export async function main(
@@ -15,14 +15,17 @@ export async function main(
     throw new Error("severity must be info, warning, or critical");
   }
 
-  return output.matched && output.message
-    ? {
-      message: {
-        title: output.message.title,
-        description: output.message.description,
+  return {
+    messages: output.matched
+      ? output.messages.map((message) => ({
+        title: message.title,
+        description: message.description,
         severity,
-        fields: structuredClone(output.fields),
-      },
-    }
-    : {};
+        fields: {
+          ...structuredClone(output.fields),
+          ...(message.fields ? structuredClone(message.fields) : {}),
+        },
+      }))
+      : [],
+  };
 }

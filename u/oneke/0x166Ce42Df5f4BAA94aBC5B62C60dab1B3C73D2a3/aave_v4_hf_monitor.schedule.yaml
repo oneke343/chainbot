@@ -14,6 +14,8 @@ args:
     "Avalanche / AVAX Correlated": 1.01
 
   chain_ids: []
+  risk_rules: []
+  message_policy: {max_messages: 20, overflow: summary}
   severity: warning
   telegram_auth: $res:u/oneke/yeap-bot
   telegram_chat_id: '-1004252768572'

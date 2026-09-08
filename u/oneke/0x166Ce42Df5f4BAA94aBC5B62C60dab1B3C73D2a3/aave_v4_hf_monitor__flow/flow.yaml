@@ -1,6 +1,6 @@
 summary: Aave V4 health-factor monitor for 0x166Ce42
-description: Run the reusable Aave V4 monitor, build at most one warning
-  message, and send it to the configured destinations. All instance parameters
+description: Run the reusable Aave V4 monitor, build alert messages, and send
+  them to the configured destinations. All instance parameters
   come from the trigger.
 value:
   modules:
@@ -21,12 +21,18 @@ value:
           market_thresholds:
             type: javascript
             expr: flow_input.market_thresholds
+          risk_rules:
+            type: javascript
+            expr: flow_input.risk_rules ?? []
+          message_policy:
+            type: javascript
+            expr: flow_input.message_policy ?? {}
           user:
             type: javascript
             expr: flow_input.user
         path: f/aave/flows/aave_v4_health
     - id: alert_policy
-      summary: Build at most one alert message
+      summary: Build alert messages
       value:
         type: script
         input_transforms:
@@ -45,7 +51,7 @@ value:
           - summary: Telegram
             modules:
               - id: send_to_telegram
-                summary: Send the optional alert to Telegram
+                summary: Send alert messages to Telegram
                 value:
                   type: script
                   input_transforms:
@@ -55,9 +61,9 @@ value:
                     chat_id:
                       type: javascript
                       expr: flow_input.telegram_chat_id
-                    message:
+                    messages:
                       type: javascript
-                      expr: results.alert_policy.message
+                      expr: results.alert_policy.messages
                   path: f/chain_sentinel/scripts/destinations/send_telegram
                 retry:
                   exponential:
@@ -74,7 +80,7 @@ value:
           - summary: FlashDuty
             modules:
               - id: send_to_flashduty
-                summary: Send the optional alert to FlashDuty
+                summary: Send alert messages to FlashDuty
                 value:
                   type: script
                   input_transforms:
@@ -84,9 +90,9 @@ value:
                     destination:
                       type: javascript
                       expr: flow_input.flashduty_destination
-                    message:
+                    messages:
                       type: javascript
-                      expr: results.alert_policy.message
+                      expr: results.alert_policy.messages
                   path: f/chain_sentinel/scripts/destinations/send_flashduty
                 retry:
                   exponential:
@@ -110,6 +116,8 @@ schema:
     - default_threshold
     - market_thresholds
     - chain_ids
+    - risk_rules
+    - message_policy
     - severity
     - telegram_auth
     - telegram_chat_id
@@ -144,6 +152,26 @@ schema:
         type: number
         exclusiveMinimum: 0
       description: Optional thresholds keyed by Aave V4 market name.
+    risk_rules:
+      type: array
+      default: []
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
+          kind: {type: string, enum: [health_factor_drop, debt_growth, liquidation_buffer]}
+          threshold_percent: {type: number, exclusiveMinimum: 0}
+          window_minutes: {type: integer, minimum: 1, maximum: 1440}
+          min_debt_usd: {type: number, minimum: 0}
+        required: [id, kind, threshold_percent]
+    message_policy:
+      type: object
+      additionalProperties: false
+      default: {max_messages: 20, overflow: summary}
+      properties:
+        max_messages: {type: integer, minimum: 1, maximum: 100}
+        overflow: {type: string, enum: [summary, truncate]}
     severity:
       type: string
       enum:

@@ -51,21 +51,26 @@ morpho_user_positions.gql（单次查询） → evaluate_morpho_health → Monit
 - 字段整理、网络范围与持仓地址校验在现有 Rule 中执行，不新增转换节点。
 - HF 直接使用 API `healthFactor`，不通过外部 USD 报价自己计算。协议计算口径由其
   市场预言机、LLTV 和债务决定。HF 为 0 会命中；有债务但 HF 为 null/非法值会失败。
-- `HF < 实际阈值` 命中；任何市场命中则输出 `matched = true`。等于阈值不命中。
-  Rule 渲染自己的模板，保存 MonitorState，再返回 `{matched, message?, fields}`。
+- `HF < 实际阈值` 进入 active，等于阈值不命中。Rule 把协议数据规范化后交给通用仓位
+  状态机；首次进入 active 时每个市场产生一条候选消息，持续 active 不重复发送，恢复后
+  可以再次触发。最终返回 `{matched, messages, fields}`。
 - 消息表格展示市场、HF、实际阈值、默认/覆盖来源、状态。先显示命中市场，再按 HF 升序。
   超长表格展示摘要，全部仓位留在 `fields.positions`；Telegram 不再拼入超长 fields。
 
-两个协议继续共用 HF 比较/表格函数，Source 都使用原生 GraphQL Script。
+现有借贷协议继续共用 Position Risk Engine；Morpho Source 使用原生 GraphQL Script。
 Aave V4 要先发现主网再查仓位，因此是三个节点；Morpho 仍是两个。
-没有新的 Resource Type、注册中心、MonitorInstance 或调度实体。
+没有新增注册中心、MonitorInstance 或调度实体。
 规则与发送目的地分离。
 
 ## 组合与边界
 
 用户创建独立根 Flow：本 Monitor 子 Flow → `matched_output` → Destination。
-Trigger、severity 和 destination 在根 Flow 中选择。当前 AlertPolicy 对持续命中的仓位
-每次执行都会发送一条汇总消息，不自带去重、冷却或恢复通知。
+Trigger、severity 和 destination 在根 Flow 中选择。AlertPolicy 可以返回多条 AlertMessage，
+Root Flow 将整个数组传给批量 Destination；仓位状态去重发生在 Rule 中。
+
+Morpho Adapter 还向通用引擎提供 `borrowAssetsUsd`，可配置 `health_factor_drop`、`debt_growth`
+和 `liquidation_buffer` 风险规则。趋势状态按分钟保存，最多覆盖 1440 分钟窗口；消息默认最多
+20 条，溢出时由 `message_policy` 决定汇总或截断。
 
 Rule 写入 `{ROOT_FLOW_PATH}/__monitor_state`，所以 Aave、Morpho 和不同用户应使用不同根 Flow，
 并避免同一实例并发写入。Source 失败或 Rule 数据校验失败时不覆盖历史有效状态。

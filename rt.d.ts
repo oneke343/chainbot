@@ -19,6 +19,18 @@ declare namespace RT {
     integration_key: string;
   }
 
+  interface SparkLend {
+    markets: Array<{
+      name: string;
+      chain_id: number;
+      chain_name: string;
+      pool_address: string;
+      rpc_url: string;
+      rpc_headers?: Record<string, string>;
+      base_currency_decimals?: number;
+    }>;
+  }
+
   interface AlertMessage {
     title: string;
     description: string;
@@ -28,10 +40,11 @@ declare namespace RT {
 
   interface MonitorOutput {
     matched: boolean;
-    message?: {
+    messages: {
       title: string;
       description: string;
-    };
+      fields?: Record<string, unknown>;
+    }[];
     fields: Record<string, unknown>;
   }
 

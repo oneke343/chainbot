@@ -1,5 +1,7 @@
 //native
 
+import { sendBatch } from "../../lib/destination-batch.ts";
+
 type FlashdutyApiResponse = {
   request_id?: string;
   error?: {
@@ -21,16 +23,32 @@ type FlashdutyPayload = {
 
 export async function main(
   destination: RT.Flashduty,
-  message?: RT.AlertMessage | null,
+  messages?: RT.AlertMessage[] | null,
   alert_key?: string,
 ) {
-  if (!message) return;
+  if (!messages?.length) return;
   if (!destination?.url) {
     throw new Error("FlashDuty url is required");
   }
   if (!destination?.integration_key) {
     throw new Error("FlashDuty integration_key is required");
   }
+
+  const results = await sendBatch(messages, async (message, index) => {
+    const finding = message.fields?.finding_id;
+    const messageAlertKey = alert_key
+      ? `${alert_key}:${typeof finding === "string" && finding ? finding : index}`.slice(0, 255)
+      : undefined;
+    return await sendOne(destination, message, messageAlertKey);
+  });
+  return { destination: "flashduty", delivered: results.length, results };
+}
+
+async function sendOne(
+  destination: RT.Flashduty,
+  message: RT.AlertMessage,
+  alert_key?: string,
+) {
 
   const payload: FlashdutyPayload = {
     title_rule: message.title,
@@ -63,7 +81,6 @@ export async function main(
   }
 
   return {
-    destination: "flashduty",
     delivered: true,
     request_id: apiPayload.request_id,
     alert_key: apiPayload.data?.alert_key,

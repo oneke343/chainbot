@@ -27,7 +27,7 @@ Rule(inputs)
   ├─ getMonitorState()
   ├─ 计算新的 states + outputs
   ├─ setMonitorState({ inputs, states, outputs })
-  └─ 只返回 MonitorOutput { matched, message?, fields }
+  └─ 只返回 MonitorOutput { matched, messages, fields }
 ```
 
 用户创建的 Root Flow：
@@ -40,7 +40,7 @@ Aave/Binance/Morpho Monitor Flow
         │ MonitorOutput
         ▼
 AlertPolicy
-        │ AlertDecision { message? }
+        │ AlertDecision { messages }
         ▼
 用户在 Flow 中选择 Destination Sender
 ```
@@ -53,10 +53,11 @@ Destination；Sender 只负责协议投递。
 ```ts
 type MonitorOutput = {
   matched: boolean;
-  message?: {
+  messages: Array<{
     title: string;
     description: string;
-  };
+    fields?: Record<string, unknown>;
+  }>;
   fields: Record<string, unknown>;
 };
 
@@ -69,8 +70,8 @@ type MonitorState = {
 
 - `inputs`：Sources 本次执行产生的结果。
 - `states`：Rules 需要跨运行保存的内部状态。
-- `outputs`：Rules 本次产生的报警候选，必须包含 `matched` 和 `fields`；具体 Monitor 在命中时
-  负责生成可选的 `message.title` 与 `message.description`。
+- `outputs`：Rules 本次产生的报警候选，必须包含 `matched`、`messages` 和 `fields`；具体
+  Monitor 可以为多个独立风险项分别生成候选消息。
 - Root Flow 和 Monitor Flow 的参数不保存在 MonitorState 中。
 
 `f/chain_sentinel/lib/monitor-state.ts` 导出的 `getMonitorState()` 和 `setMonitorState()` 会取得
@@ -90,13 +91,17 @@ Resource Type。
 `setMonitorState()` 首次创建状态 Resource 时使用 `monitor_state` 类型；JSON Schema 和运行时
 校验都会拒绝不符合 `MonitorOutput` 契约的数据。
 
-## Aave Monitor
+## 通用 Position Risk Monitor
 
-新增的 [Aave V4 Monitor](f/aave/README.md) 和 [Morpho Monitor](f/morpho/README.md)
+现有的 [Aave Monitor](f/aave/README.md)、[Morpho Monitor](f/morpho/README.md) 和
+[SparkLend Monitor](f/spark/README.md)
 自动发现用户跨网络的全部 API 已索引借款仓位，支持 `default_threshold` 与按可读市场名称
 配置的 `market_thresholds`。两者都使用原生 GraphQL Source 和 TypeScript Rule：
 Aave V4 三个 YAML Flow 节点（主网发现 → 仓位查询 → Rule），Morpho 两个节点（查询 → Rule）。
-两个协议实例应使用不同根 Flow，避免写入相同的 MonitorState。
+各协议实例应使用不同根 Flow，避免写入相同的 MonitorState。协议必须实现
+`HealthPositionAdapter<Source>`，把原始 Source 结果规范化为 `HealthInputs`，然后复用
+`f/chain_sentinel/lib/health-factor.ts` 中的通用仓位状态机。未来增加 Fluid 等协议时，只需新增
+协议 Source、Adapter 和轻量 Rule wrapper，不复制阈值、趋势、去重和消息治理逻辑。
 Morpho 使用原生 `.gql` 一次获取最多 1000 个仓位，Rule 检查返回数量是否完整；超限报错，
 不静默漏监控、不自动分页。Aave V4 要求非空网络列表，因此先用独立 `.gql` 查询发现主网，
 再把网络 ID 传给仓位查询，不写死链列表。
@@ -116,10 +121,11 @@ Rule 内部计算并保存完整的 MonitorState，但对外只返回：
 ```ts
 type AaveHealthOutput = {
   matched: boolean;
-  message?: {
+  messages: Array<{
     title: string;
     description: string;
-  };
+    fields?: Record<string, unknown>;
+  }>;
   fields: {
     user: string;
     markets: Record<string, unknown>;
@@ -127,38 +133,68 @@ type AaveHealthOutput = {
 };
 ```
 
-Aave 在 Rule 内定义自己的 description 模板，并调用通用的
-`f/chain_sentinel/lib/render-message.ts`，以本次 MonitorState 的 `inputs + states` 作为模板
-上下文。生成的 description 包含账户、触发市场摘要，以及所有已配置市场的 Current HF、
-Threshold 和状态表格。Rule 不决定 severity，也不知道 AlertPolicy 和 Destination。
+通用 Position Risk Engine 支持四类 OR 关系风险信号：当前 HF 低于市场阈值、窗口内 HF
+下降百分比、窗口内债务增长百分比，以及由 `1 - 1/HF` 估算的抵押品价格下跌清算缓冲。
+趋势首次执行只建立基线；达到窗口后才判断。历史按分钟去重，最长窗口限制为 1440 分钟。
+每个“规则 × 仓位”独立保存 active 状态，持续命中不重复发送，恢复后可以再次触发。
+
+`message_policy.max_messages` 限制一次运行最多返回 1 到 100 条消息，默认 20；溢出策略
+`summary` 会保留前面的明细并用最后一条汇总其余 finding，`truncate` 则只截断。完整仓位和
+finding 仍保存在 `MonitorOutput.fields`。Rule 不决定 severity，也不知道 Destination。
+
+示例高级规则：
+
+```yaml
+risk_rules:
+  - id: hf_drop_5m
+    kind: health_factor_drop
+    window_minutes: 5
+    threshold_percent: 10
+  - id: debt_up_15m
+    kind: debt_growth
+    window_minutes: 15
+    threshold_percent: 20
+    min_debt_usd: 100
+  - id: liquidation_buffer_15
+    kind: liquidation_buffer
+    threshold_percent: 15
+message_policy:
+  max_messages: 20
+  overflow: summary
+```
+
+这些数值只是配置结构示例，没有自动写入现有生产实例；具体阈值应由用户按账户风险偏好设置。
+`liquidation_buffer` 是假设其他条件不变时由 HF 推导的抵押品价格下跌缓冲估算，不是完整的
+多资产压力测试。
 
 ## 通用 AlertPolicy
 
 `f/chain_sentinel/scripts/alert_policies/matched_output` 是最小的通用策略：直接接收
-`MonitorOutput`，在命中且存在 Rule message 时补充 severity，返回：
+`MonitorOutput`，为每个候选消息补充 severity，返回：
 
 ```ts
 type AlertDecision = {
-  message?: {
+  messages: Array<{
     title: string;
     description: string;
     severity: "info" | "warning" | "critical";
     fields: Record<string, unknown>;
-  };
+  }>;
 };
 ```
 
 其中 `message` 使用 `f/chain_sentinel/resource_types/alert_message.resource-type.yaml` 定义的
 `AlertMessage` Resource Type，作为 AlertPolicy 和所有 Destination Sender 之间的统一契约。
 
-每次 AlertPolicy 最多产生一个 `message`：命中时返回消息，未命中时不返回该字段。它不接收
-也不返回 Destination。最终消息固定包含 `title`、`description`、`severity`、`fields` 四个
-字段。Root Flow 可以把可选的 `message` 直接传给 Telegram、Webhook 或其他 Sender；
-Destination 收到空值时会立即返回，不执行连接参数校验或网络请求。
+AlertPolicy 可以产生多个 `messages`，不接收也不返回 Destination。每条最终消息固定包含
+`title`、`description`、`severity`、`fields` 四个字段。Root Flow 把整个数组一次传给
+Telegram、Webhook 或其他 Sender，不包含发送循环；空数组由 Sender 直接返回。
 
 内置 Destination Sender 包含 Telegram、Webhook 和 FlashDuty。FlashDuty 使用标准告警事件
 接口，将 `AlertMessage.severity` 映射为 `Critical`、`Warning` 或 `Info`，并把 `fields` 转换为
-字符串 labels；可选的 `alert_key` 用于 FlashDuty 聚合同一个告警。FlashDuty Resource 同时保存
+字符串 labels；可选的 `alert_key` 会在 Sender 内按 `finding_id` 扩展，用于 FlashDuty 独立聚合
+批次内的每个告警。Sender 单批最多接收 100 条；Telegram 对同一 chat 顺序发送，FlashDuty
+和 Webhook 使用最多 4 个并发请求。FlashDuty Resource 同时保存
 标准告警 Endpoint URL 和 `integration_key`，Sender 不依赖硬编码地址。
 
 ## Project 结构
@@ -171,6 +207,8 @@ f/
       destinations/      # AlertMessage + Destination Resource → SendResult
       sources/           # 通用 Sources
     lib/
+      destination-batch.ts # Destination 内部的有界批量投递
+      health-factor.ts  # Adapter 契约、统一仓位风险规则和历史状态
       monitor-state.ts   # get/set MonitorState 等共享函数与类型
       render-message.ts  # 使用 Monitor inputs + states 渲染 Monitor 自有模板
     resource_types/      # chain_sentinel 拥有的 Resource Type 定义
@@ -184,6 +222,7 @@ f/
     scripts/
       sources/            # 已关闭的 1 分钟现货 K 线
       rules/              # 百分比变化、OR、去重与恢复
+  spark/                  # SparkLend RPC Source、Adapter、Rule 和 Monitor Flow
     flows/                # 两节点 Binance Monitor Flow
     resources/            # 公共 Market Data HTTP Resource
 ```

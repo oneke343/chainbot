@@ -5,11 +5,12 @@ import * as wmill from "windmill-client";
 export type RuleMessage = {
   title: string;
   description: string;
+  fields?: Record<string, unknown>;
 };
 
 export type MonitorOutput = {
   matched: boolean;
-  message?: RuleMessage;
+  messages: RuleMessage[];
   fields: Record<string, unknown>;
 };
 
@@ -56,13 +57,13 @@ export async function resolveRootFlowPath(reader: RootJobReader): Promise<string
 }
 
 export function emptyMonitorState(): MonitorState {
-  return { inputs: {}, states: {}, outputs: { matched: false, fields: {} } };
+  return { inputs: {}, states: {}, outputs: { matched: false, messages: [], fields: {} } };
 }
 
 export function normalizeMonitorOutput(value: unknown): MonitorOutput {
   assertRecord(value, "MonitorOutput");
   const unknownField = Object.keys(value).find(
-    (field) => !["matched", "message", "fields"].includes(field),
+    (field) => !["matched", "message", "messages", "fields"].includes(field),
   );
   if (unknownField) {
     throw new Error(`MonitorOutput.${unknownField} is not supported`);
@@ -71,33 +72,40 @@ export function normalizeMonitorOutput(value: unknown): MonitorOutput {
     throw new Error("MonitorOutput.matched must be a boolean");
   }
   assertRecord(value.fields, "MonitorOutput.fields");
-  if (value.message !== undefined) {
-    assertRecord(value.message, "MonitorOutput.message");
-    const unknownMessageField = Object.keys(value.message).find(
-      (field) => !["title", "description"].includes(field),
+  if (value.message !== undefined && value.messages !== undefined) {
+    throw new Error("MonitorOutput cannot contain both legacy message and messages");
+  }
+  const messages = value.messages === undefined
+    ? value.message === undefined ? [] : [value.message]
+    : value.messages;
+  if (!Array.isArray(messages)) throw new Error("MonitorOutput.messages must be an array");
+  for (const [index, message] of messages.entries()) {
+    assertRecord(message, `MonitorOutput.messages[${index}]`);
+    const unknownMessageField = Object.keys(message).find(
+      (field) => !["title", "description", "fields"].includes(field),
     );
     if (unknownMessageField) {
-      throw new Error(`MonitorOutput.message.${unknownMessageField} is not supported`);
+      throw new Error(`MonitorOutput.messages[${index}].${unknownMessageField} is not supported`);
     }
-    if (typeof value.message.title !== "string" || !value.message.title.trim()) {
-      throw new Error("MonitorOutput.message.title must be a non-empty string");
+    if (typeof message.title !== "string" || !message.title.trim()) {
+      throw new Error(`MonitorOutput.messages[${index}].title must be a non-empty string`);
     }
-    if (
-      typeof value.message.description !== "string"
-      || !value.message.description.trim()
-    ) {
-      throw new Error("MonitorOutput.message.description must be a non-empty string");
+    if (typeof message.description !== "string" || !message.description.trim()) {
+      throw new Error(`MonitorOutput.messages[${index}].description must be a non-empty string`);
+    }
+    if (message.fields !== undefined) {
+      assertRecord(message.fields, `MonitorOutput.messages[${index}].fields`);
     }
   }
-  return structuredClone(value) as MonitorOutput;
+  return structuredClone({ matched: value.matched, messages, fields: value.fields }) as MonitorOutput;
 }
 
 export function normalizeMonitorState(value: unknown): MonitorState {
   assertRecord(value, "MonitorState");
   assertRecord(value.inputs, "MonitorState.inputs");
   assertRecord(value.states, "MonitorState.states");
-  normalizeMonitorOutput(value.outputs);
-  return structuredClone(value) as MonitorState;
+  const outputs = normalizeMonitorOutput(value.outputs);
+  return structuredClone({ inputs: value.inputs, states: value.states, outputs }) as MonitorState;
 }
 
 export function createMonitorState<

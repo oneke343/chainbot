@@ -17,13 +17,19 @@ value:
           market_thresholds:
             type: javascript
             expr: flow_input.market_thresholds
+          risk_rules:
+            type: javascript
+            expr: flow_input.risk_rules ?? []
+          message_policy:
+            type: javascript
+            expr: flow_input.message_policy ?? {}
           user:
             type: javascript
             expr: flow_input.user
         path: f/aave/flows/aave_health
       continue_on_error: false
     - id: alert_policy
-      summary: Build one alert message from matched Monitor outputs
+      summary: Build alert messages from matched Monitor outputs
       value:
         type: script
         input_transforms:
@@ -42,7 +48,7 @@ value:
         branches:
           - modules:
               - id: send_to_telegram
-                summary: Send an alert to Telegram
+                summary: Send alert messages to Telegram
                 value:
                   type: script
                   input_transforms:
@@ -52,18 +58,27 @@ value:
                     chat_id:
                       type: javascript
                       expr: flow_input.telegram_chat_id
-                    message:
+                    messages:
                       type: javascript
-                      expr: results.alert_policy.message
+                      expr: results.alert_policy.messages
                   is_trigger: false
                   path: f/chain_sentinel/scripts/destinations/send_telegram
+                retry:
+                  exponential:
+                    attempts: 3
+                    multiplier: 2
+                    random_factor: 20
+                    seconds: 2
+                timeout:
+                  type: static
+                  value: 120
             expr: ''
             parallel: true
             skip_failure: false
           - summary: ''
             modules:
               - id: send_to_flashduty
-                summary: Send an alert to FlashDuty
+                summary: Send alert messages to FlashDuty
                 value:
                   type: script
                   input_transforms:
@@ -73,11 +88,20 @@ value:
                     destination:
                       type: javascript
                       expr: flow_input.flashduty_destination
-                    message:
+                    messages:
                       type: javascript
-                      expr: results.alert_policy.message
+                      expr: results.alert_policy.messages
                   is_trigger: false
                   path: f/chain_sentinel/scripts/destinations/send_flashduty
+                retry:
+                  exponential:
+                    attempts: 3
+                    multiplier: 2
+                    random_factor: 20
+                    seconds: 2
+                timeout:
+                  type: static
+                  value: 120
             expr: flow_input.flashduty_enabled === true
             parallel: true
             skip_failure: false
@@ -91,6 +115,8 @@ schema:
     - user
     - chain_ids
     - market_thresholds
+    - risk_rules
+    - message_policy
     - severity
     - telegram_auth
     - telegram_chat_id
@@ -117,6 +143,26 @@ schema:
         oneOf:
           - type: string
           - type: number
+    risk_rules: &risk_rules_schema
+      type: array
+      default: []
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
+          kind: {type: string, enum: [health_factor_drop, debt_growth, liquidation_buffer]}
+          threshold_percent: {type: number, exclusiveMinimum: 0}
+          window_minutes: {type: integer, minimum: 1, maximum: 1440}
+          min_debt_usd: {type: number, minimum: 0}
+        required: [id, kind, threshold_percent]
+    message_policy: &message_policy_schema
+      type: object
+      additionalProperties: false
+      default: {max_messages: 20, overflow: summary}
+      properties:
+        max_messages: {type: integer, minimum: 1, maximum: 100}
+        overflow: {type: string, enum: [summary, truncate]}
     severity:
       type: string
       enum:

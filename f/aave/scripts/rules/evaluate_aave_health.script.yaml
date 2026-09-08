@@ -27,11 +27,28 @@ schema:
                     type: string
                     description: ''
                     originalType: string
+                  chain:
+                    type: object
+                    description: ''
+                    properties:
+                      name:
+                        type: string
+                        description: ''
+                        originalType: string
+                      chainId:
+                        type: number
+                        description: ''
                   userState:
                     type: object
                     description: ''
                     properties:
                       healthFactor:
+                        type: ''
+                        description: ''
+                      totalCollateralBase:
+                        type: ''
+                        description: ''
+                      totalDebtBase:
                         type: ''
                         description: ''
               originalType: record[]
@@ -44,6 +61,55 @@ schema:
       description: Health-factor threshold keyed by Aave market name.
       default: null
       format: resource-record
+    message_policy:
+      type: object
+      description: Bound and summarize messages produced by one run.
+      default:
+        max_messages: 20
+        overflow: summary
+      additionalProperties: false
+      properties:
+        max_messages:
+          type: integer
+          minimum: 1
+          maximum: 100
+        overflow:
+          type: string
+          enum:
+            - summary
+            - truncate
+    risk_rules:
+      type: array
+      description: Optional OR-combined position trend and liquidation-buffer rules.
+      default: []
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,64}$
+          kind:
+            type: string
+            enum:
+              - health_factor_drop
+              - debt_growth
+              - liquidation_buffer
+          threshold_percent:
+            type: number
+            exclusiveMinimum: 0
+          window_minutes:
+            type: integer
+            minimum: 1
+            maximum: 1440
+          min_debt_usd:
+            type: number
+            minimum: 0
+        required:
+          - id
+          - kind
+          - threshold_percent
+      originalType: record[]
     user:
       type: string
       description: Monitored EVM account.

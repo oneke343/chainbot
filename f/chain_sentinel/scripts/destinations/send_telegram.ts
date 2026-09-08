@@ -1,13 +1,20 @@
 //native
 
+import { sendBatch } from "../../lib/destination-batch.ts";
+
 export async function main(
   auth: RT.Telegram,
   chat_id: string,
-  message?: RT.AlertMessage | null,
+  messages?: RT.AlertMessage[] | null,
 ) {
-  if (!message) return;
+  if (!messages?.length) return;
   if (!auth?.token) throw new Error("Telegram token is required");
   if (!chat_id) throw new Error("Telegram chat_id is required");
+  const results = await sendBatch(messages, (message) => sendOne(auth, chat_id, message), 1);
+  return { destination: "telegram", delivered: results.length, results };
+}
+
+async function sendOne(auth: RT.Telegram, chat_id: string, message: RT.AlertMessage) {
   const fields = message.fields && Object.keys(message.fields).length > 0
     ? `\n${JSON.stringify(message.fields)}`
     : "";
@@ -25,5 +32,5 @@ export async function main(
   if (!response.ok) {
     throw new Error(`Telegram delivery failed (${response.status}): ${responseText.slice(0, 500)}`);
   }
-  return { destination: "telegram", delivered: true };
+  return { delivered: true };
 }
