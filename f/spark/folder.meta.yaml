@@ -1,1 +1,6 @@
 summary: SparkLend position monitors
+display_name: spark
+extra_perms:
+  u/oneke343: true
+owners:
+  - u/oneke343

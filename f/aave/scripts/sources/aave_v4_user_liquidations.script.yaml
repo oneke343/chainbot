@@ -1,14 +1,24 @@
 summary: Query Aave V4 user liquidation activities
+description: ''
 lock: ''
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    api: {type: object, format: resource-graphql}
-    user: {type: string, pattern: '^0x[0-9a-fA-F]{40}$'}
+    api:
+      type: object
+      format: resource-graphql
     chain_ids:
       type: array
+      items:
+        type: integer
+        minimum: 1
       minItems: 1
-      items: {type: integer, minimum: 1}
-  required: [api, user, chain_ids]
+    user:
+      type: string
+      pattern: ^0x[0-9a-fA-F]{40}$
+  required:
+    - api
+    - user
+    - chain_ids

@@ -1,16 +1,25 @@
 summary: Query Morpho market risk metrics
+description: ''
 lock: ''
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    api: {type: object, format: resource-graphql}
-    market_ids:
-      type: array
-      minItems: 1
-      items: {type: string, pattern: '^0x[0-9a-fA-F]{64}$'}
+    api:
+      type: object
+      format: resource-graphql
     chain_ids:
       type: array
-      items: {type: integer, minimum: 1}
-  required: [api, market_ids]
+      items:
+        type: integer
+        minimum: 1
+    market_ids:
+      type: array
+      items:
+        type: string
+        pattern: ^0x[0-9a-fA-F]{64}$
+      minItems: 1
+  required:
+    - api
+    - market_ids

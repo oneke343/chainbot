@@ -1,4 +1,5 @@
 summary: Evaluate Aave V4 Spoke risk and save MonitorState
+description: ''
 lock: '!inline f/aave/scripts/rules/evaluate_aave_v4_market_risk.script.lock'
 kind: script
 schema:

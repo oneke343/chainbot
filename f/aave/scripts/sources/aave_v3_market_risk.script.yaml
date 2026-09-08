@@ -1,13 +1,20 @@
 summary: Query Aave V3 reserve risk metrics
+description: ''
 lock: ''
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    api: {type: object, format: resource-graphql}
+    api:
+      type: object
+      format: resource-graphql
     chain_ids:
       type: array
+      items:
+        type: integer
+        minimum: 1
       minItems: 1
-      items: {type: integer, minimum: 1}
-  required: [api, chain_ids]
+  required:
+    - api
+    - chain_ids

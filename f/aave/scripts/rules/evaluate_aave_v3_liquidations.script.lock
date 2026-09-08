@@ -7,6 +7,14 @@
 {
   "lockfileVersion": 2,
   "configVersion": 1,
-  "workspaces": {"": {"dependencies": {"windmill-client": "latest"}}},
-  "packages": {"windmill-client": ["windmill-client@1.805.0", "", {}, "sha512-21WTqAQqxPuFPK6Eu4hptXDdLNCrRhEzb1e7L7IC4z2IrwuJ4Hm7wNKE8c57VT8d8ZRZ1XP34n244OVhp+V3EQ=="]}
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "windmill-client": "latest",
+      },
+    },
+  },
+  "packages": {
+    "windmill-client": ["windmill-client@1.805.0", "", {}, "sha512-21WTqAQqxPuFPK6Eu4hptXDdLNCrRhEzb1e7L7IC4z2IrwuJ4Hm7wNKE8c57VT8d8ZRZ1XP34n244OVhp+V3EQ=="],
+  }
 }
