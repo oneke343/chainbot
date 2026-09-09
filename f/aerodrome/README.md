@@ -8,30 +8,44 @@ Flow 现在拆成三个可单独观察的阶段：`collect` 发现 NFT 并读取
 
 默认 RPC 为 `https://base-rpc.publicnode.com`，Base chain ID 为 8453。合约地址已内置，每次运行通过 `Voter.ve()` 和 `VotingEscrow.voter()` 双向校验。无需填写合约、ABI、selector、池子快照或 NFT ID。collect 阶段默认每个 Multicall 包含 1000 个读取并发执行 4 个请求；可用 `rpcChunkSize`（100–1000）和 `rpcConcurrency`（1–8）按 RPC 服务商调节。公共 RPC 若出现请求体过大或限流，可将两项调低。
 
+Flow 输入中的执行参数统一放在 `execution` 对象：`dryRun`、`voteExecutor`、`relayerAddress`、`relayerVariablePath` 和 `executorBatchSize`。`options` 仍是优化、候选池筛选、执行窗口及费用保护参数，`rpcUrl`、`rpcChunkSize`、`rpcConcurrency` 和 `walletAddresses` 保持在顶层。
+
 只读运行参数：
 
 ```json
 {
   "walletAddresses": ["你自己填写的 Base 地址"],
-  "dryRun": true
+  "execution": {
+    "dryRun": true,
+    "voteExecutor": "0x执行器地址",
+    "relayerAddress": "0xrelayer地址",
+    "relayerVariablePath": "f/aerodrome/vote_relayer_key",
+    "executorBatchSize": 16
+  }
 }
 ```
 
-`dryRun` 默认开启，既不读取签名密钥，也不写执行状态或广播交易。默认执行窗口以外返回投票计划并标记 `outside_execution_window`，不伪称模拟成功。需要在合法窗口内提前测试模拟时，可加 `options.executionLeadSeconds: 590000`；签名执行仍应使用默认的临近截止窗口。
+`execution.dryRun` 默认开启，既不读取签名密钥，也不写执行状态或广播交易。默认执行窗口以外返回投票计划并标记 `outside_execution_window`，不伪称模拟成功。需要在合法窗口内提前测试模拟时，可加 `options.executionLeadSeconds: 590000`；签名执行仍应使用默认的临近截止窗口。
 
-无人值守执行使用 Windmill 加密 Secret Variable：在 Windmill 中自行创建密钥变量，并将地址映射到变量路径。输入和 Git 中只放路径，不能放密钥值，也不要用 `$var:` 展开密钥到输入。示例：
+无人值守执行统一使用最小权限 `VoteExecutor`：在 Base 部署本仓库的 `contracts/aerodrome/VoteExecutor.sol`，构造参数只填写 relayer 地址；然后由 NFT owner 在 `VotingEscrow` 上对每个 tokenId 单独执行 `approve(executor, tokenId)`。owner 的私钥不进入 Windmill，Windmill 只保存 relayer 的加密 Secret Variable。执行器没有 fallback、任意 call、管理员或升级入口，只能通过 `voteMany` 将固定格式的投票转发到固定的 Aerodrome Voter。relayer 私钥泄漏时，攻击者只能提交错误投票，不能通过该合约转移 NFT 或提取 AERO。
+
+推荐模式的输入示例（`voteMany` 默认每批 16 个 NFT）：
 
 ```json
 {
   "walletAddresses": ["0x..."],
-  "dryRun": false,
-  "signerVariablePaths": {"0x...": "f/aerodrome/owner_signing_key"}
+  "execution": {
+    "dryRun": false,
+    "voteExecutor": "0x执行器地址",
+    "relayerAddress": "0xrelayer地址",
+    "relayerVariablePath": "f/aerodrome/vote_relayer_key",
+    "executorBatchSize": 16
+  }
 }
 ```
 
-内置签名器支持直接持有 NFT 的 EOA；密钥推导地址必须等于 NFT owner，且钱包有足够 Base ETH。Safe、硬件钱包、Relay 管理人签名不在此执行器的支持范围内。私钥只在执行步骤内部读取，错误消息不会包含密钥。Windmill worker 和有权读取该 Secret 的管理员能够接触该密钥，所以它不是仅有投票权限的授权。
-
-`auto_vote.schedule.yaml` 已提供每周三 UTC 21:00–22:50、每 10 分钟运行的调度（北京时间周四 05:00–06:50）。填好 `args`、完成 dry-run 验证后，将 `enabled` 改为 `true` 并将 `dryRun` 改为 `false`。默认关闭是因为通用仓库没有用户地址和签名配置。按项目现有 GitHub Actions 路径部署；本实现不会绕过 Git 推送直接同步生产。
+`relayerAddress` 必须等于 Secret Variable 私钥推导出的地址；dry-run 也要填写它，便于用正确的 `msg.sender` 模拟 wrapper。执行器会按 `executorBatchSize` 将多个 NFT 合并到原子 `voteMany` 交易；任一 NFT 模拟或链上投票失败，整批回退。默认值为 16；如果单批 calldata 过大，可主动调低。停用执行器时，owner 可在 VotingEscrow 对对应 tokenId 执行 `approve(0, tokenId)`。授权执行器仍是一次性的协议操作授权，因此部署前应核对源码和地址；执行器本身不保存 ETH。
+`auto_vote.schedule.yaml` 已提供每周三 UTC 21:00–22:50、每 10 分钟运行的调度（北京时间周四 05:00–06:50）。填好 `args.execution`、完成 dry-run 验证后，将 `enabled` 改为 `true` 并将 `args.execution.dryRun` 改为 `false`。默认关闭是因为通用仓库没有用户地址和签名配置。按项目现有 GitHub Actions 路径部署；本实现不会绕过 Git 推送直接同步生产。
 
 调度使用 `no_flow_overlap`，Flow 声明全局并发上限 1。不要对同一钱包同时运行其他发送交易的程序或并行手动启动多个实例；社区版 Windmill 是否强制执行并发上限取决于其支持情况。执行器也检查 pending nonce，合约限制同一 NFT 当周重复投票。
 
@@ -65,9 +79,9 @@ reward(p) × (fixed(p) + x(p))
 
 其中 `x(p)` 是全部 eligible NFT 合计新增到池子 `p` 的票。每个池子的边际收益会递减，所以代码通过 180 次二分搜索寻找共同边际收益阈值；无池子数量约束的结果称为 relaxed solution，再和逐个加入池子的 greedy solution 比较，选择总收益较高者。
 
-求出合计 `x(p)` 后，代码把它转换成 `1e12` 精度的相对权重。例如 `600000000000` 和 `400000000000` 表示 60/40，而不是 6000 和 4000 个 veAERO。每个 NFT 的 `vote(tokenId, pools, weights)` 都使用这组相对权重。Aerodrome Voter 会按该 NFT 自己的 `balanceOfNFT` 计算实际池子票数，因此 power 为 1 和 power 为 99 的 NFT 会分别贡献 1% 和 99% 的合计分配。代码还检查整数舍入后每个 NFT 对每个选中池子仍有正票，避免小 NFT 静默丢失某个池子的票。
+求出合计 `x(p)` 后，代码把它转换成 `1e12` 精度的相对权重。例如 `600000000000` 和 `400000000000` 表示 60/40，而不是 6000 和 4000 个 veAERO。每个 NFT 的 voteMany 参数都使用这组相对权重。Aerodrome Voter 会按该 NFT 自己的 `balanceOfNFT` 计算实际池子票数，因此 power 为 1 和 power 为 99 的 NFT 会分别贡献 1% 和 99% 的合计分配。代码还检查整数舍入后每个 NFT 对每个选中池子仍有正票，避免小 NFT 静默丢失某个池子的票。
 
-`optimize_votes` 返回的 `allocations` 只是投票计划和 calldata。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段会用同一 epoch 的新状态重新模拟并核验 NFT 归属、投票权和窗口。
+`optimize_votes` 返回的 `allocations` 只是 tokenId、池子、相对权重和收益估计组成的投票计划。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段会用同一 epoch 的新状态重新组装 `voteMany` calldata，模拟并核验 NFT 归属、投票权和窗口。
 
 候选池预筛默认关闭（四个 `candidate*` 参数均为 0），因此默认行为不会因阈值改变。需要缩小噪音池时，可在 `options` 中配置：`candidateMinRewardUsd` 是本周最低美元奖励，`candidateMinRewardPerVoteUsd` 是奖励除以当前外部加固定票数的最低密度，`candidateMinExpectedGainUsd` 是在本次总投票权和 `maxShare` 上限下的最低潜在增量收益，`candidatePoolLimit` 是预筛后最多保留的池子数量。预筛会自动保留足够满足 `maxShare` 的池子；阈值过严不会让约束失效，而是按潜在增量收益回填。建议先观察 `optimize.metrics`，再逐步提高阈值。低票高奖励池不会因为票少被默认删除。
 

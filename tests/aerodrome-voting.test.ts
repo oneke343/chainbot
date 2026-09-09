@@ -9,7 +9,9 @@ import {
   execute,
   mapChunksWithConcurrency,
   DEFAULT_POLICY,
-  ABI,
+  DEFAULT_EXECUTOR_BATCH_SIZE,
+  VOTER,
+  VOTE_EXECUTOR_ABI,
   type Snapshot,
   type Nft,
 } from "../f/aerodrome/lib/vote.ts";
@@ -60,6 +62,7 @@ function fixture(): Snapshot {
   };
 }
 const policy = { ...DEFAULT_POLICY, dilution: 1, rewardHaircut: 0 };
+assert.equal(DEFAULT_EXECUTOR_BATCH_SIZE, 16);
 test("chunked concurrency preserves order and bounds in-flight work", async () => {
   let active = 0;
   let maxActive = 0;
@@ -88,9 +91,7 @@ test("joint rewards include self dilution and match the analytic optimum", () =>
   );
   for (const p of plans) {
     assert.equal(p.weights[0], p.weights[1]);
-    const decoded = decodeFunctionData({ abi: ABI, data: p.data });
-    assert.equal(decoded.functionName, "vote");
-    assert.equal(decoded.args?.[0], BigInt(p.tokenId));
+    assert.deepEqual(p.pools, [addr(1), addr(2)]);
   }
 });
 test("doubling voting power increases payout, never beyond pool rewards", () => {
@@ -133,14 +134,11 @@ test("zero valued rewards produce no votes and no NaN", () => {
   s.pools.forEach((p) => (p.rewardUsd = 0));
   assert.deepEqual(optimize(s, policy), []);
 });
-test("token IDs above JS safe integer survive ABI encoding", () => {
+test("token IDs above JS safe integer survive optimization", () => {
   const s = fixture();
   s.nfts[0].tokenId = "900719925474099312345";
   const p = optimize(s, policy)[0];
-  assert.equal(
-    decodeFunctionData({ abi: ABI, data: p.data }).args?.[0],
-    BigInt(s.nfts[0].tokenId),
-  );
+  assert.equal(p.tokenId, s.nfts[0].tokenId);
 });
 test("cardinality and concentration constraints fail closed if incompatible", () => {
   assert.throws(
@@ -222,14 +220,124 @@ test("execution gates prevent signing outside the window and after simulation fa
   const fake={
     async getBlock(){return {number:2n,timestamp:BigInt(s.timestamp)};},
     async multicall(){return [plans[0].owner,0n,BigInt(plans[0].power),0].map(result=>({status:"success",result}));},
-    async simulateContract(){simulated++;throw Error("revert");}
+    async simulateContract(){simulated++;throw Error("revert");},
+    async readContract(args: { functionName: string }) {
+      return args.functionName === "relayer" ? addr(901) : VOTER;
+    },
   } as unknown as Parameters<typeof execute>[0];
-  const deps={async readJournal(){return {};},async writeJournal(){},async accountFor(){signed++;throw Error("must not sign");}};
-  await assert.rejects(execute(fake,s,[plans[0]],policy,false,deps),/simulation failed/);
+  const deps={async readJournal(){return {};},async writeJournal(){},async relayerAccount(){signed++;throw Error("must not sign");}};
+  const config = { voteExecutor: addr(900), relayerAddress: addr(901) };
+  await assert.rejects(execute(fake,s,[plans[0]],policy,false,deps,config),/simulation failed/);
   assert.equal(simulated,1);assert.equal(signed,0);
   s.timestamp=s.voteEnd-100;
-  const outside=await execute(fake,s,[plans[0]],policy,false,deps);
+  const outside=await execute(fake,s,[plans[0]],policy,false,deps,config);
   assert.equal(outside[0].status,"outside_execution_window");assert.equal(simulated,1);assert.equal(signed,0);
+});
+
+test("executor mode simulates with the relayer and wrapper target", async () => {
+  const s = fixture();
+  s.timestamp = s.voteEnd - 3600;
+  const allocation = optimize(s, policy)[0];
+  const executor = addr(900);
+  const relayer = addr(901);
+  let simulation: { address: Address; account: Address } | undefined;
+  const fake = {
+    async getBlock() {
+      return { number: 2n, timestamp: BigInt(s.timestamp) };
+    },
+    async multicall() {
+      return [allocation.owner, 0n, BigInt(allocation.power), 0].map((result) => ({
+        status: "success",
+        result,
+      }));
+    },
+    async simulateContract(args: { address: Address; account: Address }) {
+      simulation = { address: args.address, account: args.account };
+    },
+    async estimateContractGas() {
+      return 100000n;
+    },
+    async estimateFeesPerGas() {
+      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
+    },
+    async readContract(args: { functionName: string }) {
+      if (args.functionName === "relayer") return relayer;
+      if (args.functionName === "AERODROME_VOTER") return VOTER;
+      return 0n;
+    },
+  } as unknown as Parameters<typeof execute>[0];
+  const result = await execute(
+    fake,
+    s,
+    [allocation],
+    policy,
+    true,
+    { async readJournal(){return {};}, async writeJournal(){}, async relayerAccount(){throw Error("must not read in dry-run");} },
+    { voteExecutor: executor, relayerAddress: relayer },
+  );
+  assert.deepEqual(simulation, { address: executor, account: relayer });
+  assert.equal(result[0].status, "simulated");
+  assert.equal(result[0].to, executor);
+});
+
+test("executor batch mode encodes one atomic voteMany call", async () => {
+  const s = fixture();
+  s.timestamp = s.voteEnd - 3600;
+  const allocations = optimize(s, policy);
+  const executor = addr(910);
+  const relayer = addr(911);
+  let simulation: { functionName: string; address: Address; account: Address } | undefined;
+  const fake = {
+    async getBlock() {
+      return { number: 2n, timestamp: BigInt(s.timestamp) };
+    },
+    async multicall(args: { contracts: Array<{ functionName: string; args?: readonly unknown[] }> }) {
+      return args.contracts.map((call) => {
+        const tokenId = Number(call.args?.[0] ?? 0n);
+        const allocation = allocations.find((item) => Number(item.tokenId) === tokenId);
+        if (call.functionName === "ownerOf") return { status: "success", result: allocation?.owner };
+        if (call.functionName === "balanceOfNFT") return { status: "success", result: BigInt(allocation?.power ?? "0") };
+        if (call.functionName === "lastVoted") return { status: "success", result: 0n };
+        return { status: "success", result: 0 };
+      });
+    },
+    async readContract(args: { functionName: string }) {
+      if (args.functionName === "relayer") return relayer;
+      if (args.functionName === "AERODROME_VOTER") return VOTER;
+      return 0n;
+    },
+    async simulateContract(args: { functionName: string; address: Address; account: Address }) {
+      simulation = args;
+    },
+    async estimateContractGas() {
+      return 200000n;
+    },
+    async estimateFeesPerGas() {
+      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
+    },
+  } as unknown as Parameters<typeof execute>[0];
+  const result = await execute(
+    fake,
+    s,
+    allocations,
+    policy,
+    true,
+    { async readJournal(){return {};}, async writeJournal(){}, async relayerAccount(){throw Error("must not read in dry-run");} },
+    { voteExecutor: executor, relayerAddress: relayer, batchSize: 2 },
+  );
+  assert.equal(result.length, 2);
+  assert.equal(simulation?.functionName, "voteMany");
+  assert.equal(simulation?.address.toLowerCase(), executor.toLowerCase());
+  assert.equal(simulation?.account.toLowerCase(), relayer.toLowerCase());
+  assert.equal(result[0].status, "simulated");
+  assert.equal(result[0].data, result[1].data);
+  assert.equal(
+    decodeFunctionData({
+      abi: VOTE_EXECUTOR_ABI,
+      data: result[0].data as `0x${string}`,
+    }).functionName,
+    "voteMany",
+  );
 });
 
 test("uncertain broadcasts block new signing and stale snapshots fail closed",async()=>{
@@ -238,11 +346,15 @@ test("uncertain broadcasts block new signing and stale snapshots fail closed",as
   const fake={
     async getBlock(){return {number:2n,timestamp:BigInt(s.timestamp)};},
     async multicall(){return [a.owner,0n,BigInt(a.power),0].map(result=>({status:"success",result}));},
+    async readContract(args: { functionName: string }) {
+      return args.functionName === "relayer" ? addr(901) : VOTER;
+    },
     async getTransactionReceipt(){throw Error("not found");}
   } as unknown as Parameters<typeof execute>[0];
   let signed=0;
-  const deps={async readJournal(){return {[`${s.epoch}:${a.tokenId}`]:{hash,owner:a.owner,nonce:1,status:"prepared" as const,epoch:s.epoch,tokenId:a.tokenId}};},async writeJournal(){},async accountFor(){signed++;throw Error("must not sign");}};
-  await assert.rejects(execute(fake,s,[a],policy,false,deps),/Unresolved vote/);assert.equal(signed,0);
+  const deps={async readJournal(){return {[`${s.epoch}:${a.tokenId}`]:{hash,owner:a.owner,nonce:1,status:"prepared" as const,epoch:s.epoch,tokenId:a.tokenId}};},async writeJournal(){},async relayerAccount(){signed++;throw Error("must not sign");}};
+  const config = { voteExecutor: addr(900), relayerAddress: addr(901) };
+  await assert.rejects(execute(fake,s,[a],policy,false,deps,config),/Unresolved vote/);assert.equal(signed,0);
   const stale={...s,timestamp:s.timestamp-901};
-  await assert.rejects(execute(fake,stale,[a],policy,true),/expired/);
+  await assert.rejects(execute(fake,stale,[a],policy,true,deps,config),/expired/);
 });

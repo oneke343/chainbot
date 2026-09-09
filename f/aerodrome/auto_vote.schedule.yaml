@@ -7,6 +7,10 @@ is_flow: true
 no_flow_overlap: true
 args:
   walletAddresses: []
-  dryRun: true
-  signerVariablePaths: {}
+  execution:
+    dryRun: true
+    voteExecutor: ''
+    relayerAddress: ''
+    relayerVariablePath: ''
+    executorBatchSize: 16
   options: {}

@@ -17,7 +17,7 @@ import {
   DEFAULT_POLICY,
   type Journal,
   type Snapshot,
-} from "../f/aerodrome/auto_vote_optimizer__flow/vote.ts";
+} from "../f/aerodrome/lib/vote.ts";
 const url = "http://127.0.0.1:18545";
 const client = clientFor(url);
 async function local(method: string, params: unknown[]) {
@@ -55,6 +55,8 @@ const sourceWallet = createWalletClient({
 });
 await client.waitForTransactionReceipt({
   hash: await sourceWallet.writeContract({
+    chain: base,
+    account: source,
     address: aero,
     abi: erc20,
     functionName: "transfer",
@@ -64,6 +66,8 @@ await client.waitForTransactionReceipt({
 await local("anvil_stopImpersonatingAccount", [source]);
 await client.waitForTransactionReceipt({
   hash: await wallet.writeContract({
+    chain: base,
+    account,
     address: aero,
     abi: erc20,
     functionName: "approve",
@@ -73,10 +77,13 @@ await client.waitForTransactionReceipt({
 const lockAbi = parseAbi([
   "function createLock(uint256,uint256) returns (uint256)",
   "function lockPermanent(uint256)",
+  "function approve(address,uint256)",
 ]);
 for (let i = 0; i < 2; i++)
   await client.waitForTransactionReceipt({
     hash: await wallet.writeContract({
+      chain: base,
+      account,
       address: VE,
       abi: lockAbi,
       functionName: "createLock",
@@ -85,6 +92,7 @@ for (let i = 0; i < 2; i++)
   });
 let block = await client.getBlock();
 const epoch = await client.readContract({
+  authorizationList: undefined,
   address: VOTER,
   abi: ABI,
   functionName: "epochStart",
@@ -100,6 +108,8 @@ assert.equal(found.length, 2);
 for (const nft of found)
   await client.waitForTransactionReceipt({
     hash: await wallet.writeContract({
+      chain: base,
+      account,
       address: VE,
       abi: lockAbi,
       functionName: "lockPermanent",
@@ -107,6 +117,31 @@ for (const nft of found)
     }),
   });
 console.log("Fork: created two permanent veAERO NFTs for an ephemeral account");
+const executorArtifact = await Bun.file(
+  new URL("../contracts/out/VoteExecutor.sol/VoteExecutor.json", import.meta.url),
+).json();
+const executor = await (wallet.deployContract as any)({
+  chain: base,
+  account,
+  abi: executorArtifact.abi,
+  bytecode: executorArtifact.bytecode.object as Hex,
+  args: [account.address],
+});
+const executorReceipt = await client.waitForTransactionReceipt({ hash: executor });
+const executorAddress = executorReceipt.contractAddress;
+assert.ok(executorAddress);
+for (const nft of found)
+  await client.waitForTransactionReceipt({
+    hash: await wallet.writeContract({
+      chain: base,
+      account,
+      address: VE,
+      abi: lockAbi,
+      functionName: "approve",
+      args: [executorAddress, BigInt(nft.tokenId)],
+    }),
+  });
+console.log(`Fork: deployed VoteExecutor ${executorAddress} and approved both NFTs`);
 // Read market state from the public chain (or a saved same-epoch public
 // snapshot). Replaying thousands of upstream storage misses through Anvil
 // is unnecessary; ownership/signing/votes below use actual fork contracts.
@@ -141,11 +176,9 @@ const policy = { ...DEFAULT_POLICY, maxGasUsd: 20 };
 const plans = optimize(snapshot, policy);
 assert.equal(plans.length, 2);
 await local("anvil_setIntervalMining", [1]);
-const simulated = await execute(client, snapshot, plans, policy, true);
-assert.ok(simulated.every((r) => r.status === "simulated"));
 let journal: Journal = {};
 const deps = {
-  async accountFor() {
+  async relayerAccount() {
     return account;
   },
   async readJournal() {
@@ -155,9 +188,15 @@ const deps = {
     journal = structuredClone(j);
   },
 };
-const sent = await execute(client, snapshot, plans, policy, false, deps);
+const executorConfig = {
+  voteExecutor: executorAddress,
+  relayerAddress: account.address,
+};
+const simulated = await execute(client, snapshot, plans, policy, true, deps, executorConfig);
+assert.ok(simulated.every((r) => r.status === "simulated"));
+const sent = await execute(client, snapshot, plans, policy, false, deps, executorConfig);
 assert.ok(sent.every((r) => r.status === "confirmed"));
-const repeated = await execute(client, snapshot, plans, policy, false, deps);
+const repeated = await execute(client, snapshot, plans, policy, false, deps, executorConfig);
 assert.ok(repeated.every((r) => r.status === "already_voted"));
 await local("anvil_setIntervalMining", [0]);
 console.log(

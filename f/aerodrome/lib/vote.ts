@@ -21,6 +21,7 @@ export const VE = "0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4" as Address;
 export const WETH = "0x4200000000000000000000000000000000000006" as Address;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const WEEK = 604800;
+export const DEFAULT_EXECUTOR_BATCH_SIZE = 16;
 export const ABI = parseAbi([
   "function ve() view returns (address)",
   "function voter() view returns (address)",
@@ -50,7 +51,13 @@ export const ABI = parseAbi([
   "function rewards(uint256) view returns (address)",
   "function tokenRewardsPerEpoch(address,uint256) view returns (uint256)",
   "function decimals() view returns (uint8)",
-  "function vote(uint256,address[],uint256[])",
+]);
+// The relayer can call only the executor's atomic batch entrypoint. The
+// executor itself forwards each item to the immutable Aerodrome Voter.
+export const VOTE_EXECUTOR_ABI = parseAbi([
+  "function voteMany(uint256[],address[][],uint256[][])",
+  "function relayer() view returns (address)",
+  "function AERODROME_VOTER() view returns (address)",
 ]);
 type Call = {
   address: Address;
@@ -103,7 +110,6 @@ export type Allocation = {
   pools: Address[];
   weights: string[];
   estimatedRewardUsd: number;
-  data: Hex;
 };
 export type Policy = {
   maxPools: number;
@@ -866,15 +872,6 @@ export function optimizeDetailed(
       pools: usable.map((v) => v.c.p.address),
       weights: usable.map((v) => v.w.toString()),
       estimatedRewardUsd: 0,
-      data: encodeFunctionData({
-        abi: ABI,
-        functionName: "vote",
-        args: [
-          BigInt(n.tokenId),
-          usable.map((v) => v.c.p.address),
-          usable.map((v) => v.w),
-        ],
-      }),
     };
   });
   allocations.forEach((a) => {
@@ -921,6 +918,7 @@ export function executionWindow(
 type JournalEntry = {
   hash: Hex;
   owner: Address;
+  sender?: Address;
   nonce: number;
   status: "prepared" | "confirmed" | "reverted";
   epoch: number;
@@ -928,37 +926,40 @@ type JournalEntry = {
 };
 export type Journal = Record<string, JournalEntry>;
 export type ExecutionDeps = {
-  accountFor(owner: Address): Promise<LocalAccount>;
+  relayerAccount(): Promise<LocalAccount>;
   readJournal(): Promise<Journal>;
   writeJournal(journal: Journal): Promise<void>;
 };
+export type VoteExecutorConfig = {
+  voteExecutor: Address;
+  relayerAddress: Address;
+  /** Maximum NFTs included in one VoteExecutor.voteMany transaction. */
+  batchSize?: number;
+};
 export function makeExecutionDeps(
-  signerVariablePaths: Record<string, string> = {},
+  relayerVariablePath: string,
 ): ExecutionDeps {
+  async function accountFromVariable(path: string | undefined, label: string) {
+    assert(path && /^[uf]\//.test(path), `Missing ${label} secret variable path`);
+    let value: string;
+    try {
+      value = await wmill.getVariable(path);
+    } catch {
+      throw new Error(`Unable to read ${label} secret variable`);
+    }
+    assert(
+      /^0x[0-9a-fA-F]{64}$/.test(value),
+      `${label} variable must contain a hex private key`,
+    );
+    try {
+      return privateKeyToAccount(value as Hex);
+    } catch {
+      throw new Error(`Invalid ${label} signing key`);
+    }
+  }
   return {
-    async accountFor(owner) {
-      const path = Object.entries(signerVariablePaths).find(
-        ([a]) => a.toLowerCase() === owner.toLowerCase(),
-      )?.[1];
-      assert(
-        path && /^[uf]\//.test(path),
-        `Missing signer secret variable path for ${owner}`,
-      );
-      let value: string;
-      try {
-        value = await wmill.getVariable(path);
-      } catch {
-        throw new Error("Unable to read signer secret variable");
-      }
-      assert(
-        /^0x[0-9a-fA-F]{64}$/.test(value),
-        "Signer variable must contain a hex private key",
-      );
-      try {
-        return privateKeyToAccount(value as Hex);
-      } catch {
-        throw new Error("Invalid signing key");
-      }
+    async relayerAccount() {
+      return accountFromVariable(relayerVariablePath, "relayer");
     },
     async readJournal() {
       return (await wmill.getState("f/aerodrome/__vote_state")) ?? {};
@@ -968,55 +969,66 @@ export function makeExecutionDeps(
     },
   };
 }
-export async function execute(
+
+type PreparedBatchVote = {
+  allocation: Allocation;
+  key: string;
+};
+
+/**
+ * Execute votes in atomic batches. VoteExecutor forwards each item to the
+ * Aerodrome Voter, so Voter sees the approved executor as msg.sender. A single
+ * hash is journaled for every NFT in the batch; any failed vote reverts the
+ * whole transaction and leaves every entry retryable.
+ */
+async function executeBatched(
   client: PublicClient,
   snapshot: Snapshot,
   allocations: Allocation[],
   policy: Policy,
   dryRun: boolean,
-  deps?: ExecutionDeps,
-) {
-  assert(typeof dryRun === "boolean", "dryRun must be a boolean");
-  assert(dryRun || deps, "Execution requires signing and journal adapters");
-  const journal = dryRun ? {} : await deps!.readJournal();
+  deps: ExecutionDeps,
+  voteExecutor: Address,
+  relayerAddress: Address,
+  batchSize: number,
+): Promise<Record<string, unknown>[]> {
+  const journal = dryRun ? {} : await deps.readJournal();
   const results: Record<string, unknown>[] = [];
-  for (const a of allocations) {
-    const latest = await client.getBlock();
-    assert(
-      Number(latest.timestamp) - snapshot.timestamp <=
-        policy.maxSnapshotAgeSeconds,
-      "Snapshot expired; rerun collection",
-    );
+  const latest = await client.getBlock();
+  assert(
+    Number(latest.timestamp) - snapshot.timestamp <=
+      policy.maxSnapshotAgeSeconds,
+    "Snapshot expired; rerun collection",
+  );
+  const prepared: PreparedBatchVote[] = [];
+  for (const allocation of allocations) {
     if (!executionWindow(Number(latest.timestamp), snapshot, policy)) {
       results.push({
-        tokenId: a.tokenId,
+        tokenId: allocation.tokenId,
         status: "outside_execution_window",
-        data: a.data,
       });
       continue;
     }
     const [owner, last, power, kind] = await many(client, latest.number!, [
-      call(VE, "ownerOf", BigInt(a.tokenId)),
-      call(VOTER, "lastVoted", BigInt(a.tokenId)),
-      call(VE, "balanceOfNFT", BigInt(a.tokenId)),
-      call(VE, "escrowType", BigInt(a.tokenId)),
+      call(VE, "ownerOf", BigInt(allocation.tokenId)),
+      call(VOTER, "lastVoted", BigInt(allocation.tokenId)),
+      call(VE, "balanceOfNFT", BigInt(allocation.tokenId)),
+      call(VE, "escrowType", BigInt(allocation.tokenId)),
     ]);
     assert(
-      owner.toLowerCase() === a.owner.toLowerCase() && kind === 0,
+      owner.toLowerCase() === allocation.owner.toLowerCase() && kind === 0,
       "NFT ownership/type changed",
     );
     if (Number(last) >= snapshot.epoch) {
-      results.push({ tokenId: a.tokenId, status: "already_voted" });
+      results.push({ tokenId: allocation.tokenId, status: "already_voted" });
       continue;
     }
     assert(
-      power.toString() === a.power,
+      power.toString() === allocation.power,
       "Voting power changed; recompute allocation",
     );
-    const key = `${snapshot.epoch}:${a.tokenId}`;
+    const key = `${snapshot.epoch}:${allocation.tokenId}`;
     if (!dryRun && journal[key] && journal[key].status !== "reverted") {
-      // Never sign a second nonce after uncertain broadcast/crash. The prepared
-      // hash is persisted before broadcast, including the crash-before-send case.
       let receipt;
       try {
         receipt = await client.getTransactionReceipt({
@@ -1029,47 +1041,62 @@ export async function execute(
       }
       journal[key].status =
         receipt.status === "success" ? "confirmed" : "reverted";
-      await deps!.writeJournal(journal);
+      await deps.writeJournal(journal);
       if (receipt.status === "success") {
         results.push({
-          tokenId: a.tokenId,
+          tokenId: allocation.tokenId,
           status: "confirmed",
           hash: receipt.transactionHash,
         });
         continue;
       }
     }
-    const args = [BigInt(a.tokenId), a.pools, a.weights.map(BigInt)] as const;
+    prepared.push({ allocation, key });
+  }
+
+  for (let start = 0; start < prepared.length; start += batchSize) {
+    const batch = prepared.slice(start, start + batchSize);
+    const tokenIds = batch.map(({ allocation }) => BigInt(allocation.tokenId));
+    const pools = batch.map(({ allocation }) => allocation.pools);
+    const weights = batch.map(({ allocation }) =>
+      allocation.weights.map(BigInt),
+    );
+    const args = [tokenIds, pools, weights] as const;
+    const data = encodeFunctionData({
+      abi: VOTE_EXECUTOR_ABI,
+      functionName: "voteMany",
+      args,
+    });
     try {
       await client.simulateContract({
-        address: VOTER,
-        abi: ABI,
-        functionName: "vote",
+        address: voteExecutor,
+        abi: VOTE_EXECUTOR_ABI,
+        functionName: "voteMany",
         args,
-        account: a.owner,
+        account: relayerAddress,
       });
     } catch {
       throw new Error(
-        `Vote simulation failed for NFT ${a.tokenId}; no transaction sent`,
+        `Vote batch simulation failed for NFTs ${batch
+          .map(({ allocation }) => allocation.tokenId)
+          .join(",")}; no transaction sent`,
       );
     }
     const gas = await client.estimateContractGas({
-      address: VOTER,
-      abi: ABI,
-      functionName: "vote",
+      address: voteExecutor,
+      abi: VOTE_EXECUTOR_ABI,
+      functionName: "voteMany",
       args,
-      account: a.owner,
+      account: relayerAddress,
     });
     const gasLimit = (gas * 125n) / 100n;
     const fees = await client.estimateFeesPerGas();
     assert(fees.maxFeePerGas !== undefined, "Missing EIP-1559 fee quote");
-    // Base L1 and operator fees are added using GasPriceOracle below.
     const oracleAbi = parseAbi([
       "function getL1Fee(bytes) view returns (uint256)",
       "function getOperatorFee(uint256) view returns (uint256)",
     ]);
-    // Calldata padded to cover signature/envelope overhead conservatively.
-    const envelope = (a.data + "ff".repeat(256)) as Hex;
+    const envelope = (data + "ff".repeat(256)) as Hex;
     const l1 = await client.readContract({
       address: "0x420000000000000000000000000000000000000F",
       abi: oracleAbi,
@@ -1086,48 +1113,55 @@ export async function execute(
     });
     const feeWei = gasLimit * fees.maxFeePerGas + (l1 + operator) * 2n;
     const gasUsd = units(feeWei) * snapshot.ethUsd;
+    const perVoteGasUsd = gasUsd / batch.length;
     if (
-      gasUsd > policy.maxGasUsd ||
-      a.estimatedRewardUsd - gasUsd < policy.minNetUsd
+      perVoteGasUsd > policy.maxGasUsd ||
+      batch.some(
+        ({ allocation }) =>
+          allocation.estimatedRewardUsd - perVoteGasUsd < policy.minNetUsd,
+      )
     ) {
-      results.push({
-        tokenId: a.tokenId,
-        status: "below_net_return_or_gas_limit",
-        gasUsd,
-        estimatedRewardUsd: a.estimatedRewardUsd,
-      });
+      for (const { allocation } of batch)
+        results.push({
+          tokenId: allocation.tokenId,
+          status: "below_net_return_or_gas_limit",
+          gasUsd: perVoteGasUsd,
+          estimatedRewardUsd: allocation.estimatedRewardUsd,
+        });
       continue;
     }
     if (dryRun) {
-      results.push({
-        tokenId: a.tokenId,
-        status: "simulated",
-        to: VOTER,
-        data: a.data,
-        gasUsd,
-        estimatedNetUsd: a.estimatedRewardUsd - gasUsd,
-      });
+      for (const { allocation } of batch)
+        results.push({
+          tokenId: allocation.tokenId,
+          status: "simulated",
+          to: voteExecutor,
+          data,
+          batchSize: batch.length,
+          gasUsd: perVoteGasUsd,
+          estimatedNetUsd: allocation.estimatedRewardUsd - perVoteGasUsd,
+        });
       continue;
     }
-    const account = await deps!.accountFor(a.owner);
+    const account = await deps.relayerAccount!();
     assert(
-      account.address.toLowerCase() === a.owner.toLowerCase(),
-      "Signing key does not own NFT",
+      account.address.toLowerCase() === relayerAddress.toLowerCase(),
+      "Relayer signing key does not match relayerAddress",
     );
     const nonce = await client.getTransactionCount({
-      address: a.owner,
+      address: relayerAddress,
       blockTag: "pending",
     });
     assert(
       nonce ===
         (await client.getTransactionCount({
-          address: a.owner,
+          address: relayerAddress,
           blockTag: "latest",
         })),
-      "Owner has pending transactions; retry after confirmation",
+      "Relayer has pending transactions; retry after confirmation",
     );
     assert(
-      (await client.getBalance({ address: a.owner })) >= feeWei,
+      (await client.getBalance({ address: relayerAddress })) >= feeWei,
       "Insufficient ETH for vote",
     );
     const beforeSign = await client.getBlock();
@@ -1139,28 +1173,30 @@ export async function execute(
       chainId: 8453,
       type: "eip1559",
       nonce,
-      to: VOTER,
-      data: a.data,
+      to: voteExecutor,
+      data,
       value: 0n,
       gas: gasLimit,
       maxFeePerGas: fees.maxFeePerGas,
       maxPriorityFeePerGas: fees.maxPriorityFeePerGas!,
     });
     const hash = keccak256(signed);
-    journal[key] = {
-      hash,
-      owner: a.owner,
-      nonce,
-      status: "prepared",
-      epoch: snapshot.epoch,
-      tokenId: a.tokenId,
-    };
-    await deps!.writeJournal(journal);
+    for (const { allocation, key } of batch)
+      journal[key] = {
+        hash,
+        owner: allocation.owner,
+        sender: relayerAddress,
+        nonce,
+        status: "prepared",
+        epoch: snapshot.epoch,
+        tokenId: allocation.tokenId,
+      };
+    await deps.writeJournal(journal);
     try {
       await client.sendRawTransaction({ serializedTransaction: signed });
     } catch {
       throw new Error(
-        `Broadcast uncertain for NFT ${a.tokenId}, hash ${hash}; reconcile journal before retry`,
+        `Broadcast uncertain for vote batch ${hash}; reconcile nonce ${nonce} before retry`,
       );
     }
     let receipt;
@@ -1171,27 +1207,104 @@ export async function execute(
         timeout: 60000,
       });
     } catch {
-      throw new Error(`Vote pending: ${hash}; journal retained`);
+      throw new Error(`Vote batch pending: ${hash}; journal retained`);
     }
-    journal[key].status =
-      receipt.status === "success" ? "confirmed" : "reverted";
-    await deps!.writeJournal(journal);
-    assert(receipt.status === "success", `Vote reverted: ${hash}`);
-    const post = await many(client, receipt.blockNumber, [
-      call(VOTER, "lastVoted", BigInt(a.tokenId)),
-      ...a.pools.map((p) => call(VOTER, "votes", BigInt(a.tokenId), p)),
-    ]);
-    assert(
-      Number(post[0]) >= snapshot.epoch && post.slice(1).every((v) => v > 0n),
-      `Vote postcondition failed: ${hash}`,
-    );
-    results.push({
-      tokenId: a.tokenId,
-      status: "confirmed",
-      hash,
-      gasUsd,
-      estimatedNetUsd: a.estimatedRewardUsd - gasUsd,
-    });
+    for (const { key } of batch)
+      journal[key].status =
+        receipt.status === "success" ? "confirmed" : "reverted";
+    await deps.writeJournal(journal);
+    assert(receipt.status === "success", `Vote batch reverted: ${hash}`);
+
+    const postCalls: Call[] = [];
+    for (const { allocation } of batch) {
+      postCalls.push(call(VOTER, "lastVoted", BigInt(allocation.tokenId)));
+      postCalls.push(
+        ...allocation.pools.map((pool) =>
+          call(VOTER, "votes", BigInt(allocation.tokenId), pool),
+        ),
+      );
+    }
+    const post = await many(client, receipt.blockNumber, postCalls);
+    let offset = 0;
+    for (const { allocation } of batch) {
+      const lastVoted = post[offset++];
+      const votes = post.slice(offset, offset + allocation.pools.length);
+      offset += allocation.pools.length;
+      assert(
+        Number(lastVoted) >= snapshot.epoch && votes.every((value) => value > 0n),
+        `Vote postcondition failed: ${hash}`,
+      );
+      results.push({
+        tokenId: allocation.tokenId,
+        status: "confirmed",
+        hash,
+        batchSize: batch.length,
+        gasUsd: perVoteGasUsd,
+        estimatedNetUsd: allocation.estimatedRewardUsd - perVoteGasUsd,
+      });
+    }
   }
   return results;
+}
+
+export async function execute(
+  client: PublicClient,
+  snapshot: Snapshot,
+  allocations: Allocation[],
+  policy: Policy,
+  dryRun: boolean,
+  deps: ExecutionDeps,
+  executorConfig: Partial<VoteExecutorConfig> = {},
+) {
+  assert(typeof dryRun === "boolean", "dryRun must be a boolean");
+  assert(deps, "Execution requires relayer and journal adapters");
+  const voteExecutor = executorConfig.voteExecutor
+    ? getAddress(executorConfig.voteExecutor)
+    : undefined;
+  const relayerAddress = executorConfig.relayerAddress
+    ? getAddress(executorConfig.relayerAddress)
+    : undefined;
+  assert(voteExecutor, "voteExecutor is required");
+  assert(relayerAddress, "relayerAddress is required");
+  assert(deps.relayerAccount, "Execution dependencies must provide relayerAccount");
+  const batchSize = executorConfig.batchSize ?? DEFAULT_EXECUTOR_BATCH_SIZE;
+  assert(
+    Number.isInteger(batchSize) && batchSize >= 1 && batchSize <= 50,
+    "executor batchSize must be an integer from 1 to 50",
+  );
+  const [configuredRelayer, configuredVoter] = await Promise.all([
+    client.readContract({
+      address: voteExecutor,
+      abi: VOTE_EXECUTOR_ABI,
+      functionName: "relayer",
+      blockNumber: BigInt(snapshot.block),
+      authorizationList: undefined,
+    }),
+    client.readContract({
+      address: voteExecutor,
+      abi: VOTE_EXECUTOR_ABI,
+      functionName: "AERODROME_VOTER",
+      blockNumber: BigInt(snapshot.block),
+      authorizationList: undefined,
+    }),
+  ]);
+  assert(
+    getAddress(configuredRelayer) === relayerAddress,
+    "VoteExecutor relayer does not match relayerAddress",
+  );
+  assert(
+    getAddress(configuredVoter) === VOTER,
+    "VoteExecutor is not bound to the Aerodrome Base Voter",
+  );
+  return executeBatched(
+    client,
+    snapshot,
+    allocations,
+    policy,
+    dryRun,
+    deps,
+    voteExecutor,
+    relayerAddress,
+    batchSize,
+  );
 }
