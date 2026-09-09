@@ -1,0 +1,10 @@
+summary: Shared Aerodrome voting library
+description: Internal helper module used by the collect, optimize, and execute
+  stages. Use the stage scripts instead of invoking this library directly.
+lock: '!inline f/aerodrome/lib/vote.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

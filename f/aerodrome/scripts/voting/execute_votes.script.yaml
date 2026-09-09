@@ -1,0 +1,51 @@
+summary: Simulate and execute veAERO votes
+description: Revalidates the snapshot and NFT state, simulates each Voter.vote
+  call, and when dryRun is false signs, broadcasts, confirms, and journals each
+  transaction. Signing secrets are read only in this stage.
+lock: '!inline f/aerodrome/scripts/voting/execute_votes.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    allocations:
+      type: array
+      description: Vote plans returned by optimize_votes, including token IDs, pool
+        addresses, relative weights, and encoded calldata.
+      default: null
+      items:
+        type: resource
+        resourceType: allocation
+      originalType: resource[]
+    dryRun:
+      type: boolean
+      description: Simulate and report transactions without reading signing secrets or
+        broadcasting when true.
+      default: true
+    options:
+      type: object
+      description: Execution and policy options; must match the policy used to create
+        the allocations.
+      default: {}
+      format: resource-partial
+    rpcUrl:
+      type: string
+      description: Base JSON-RPC URL used for simulation, fee estimation, and
+        transaction confirmation.
+      default: https://base-rpc.publicnode.com
+      originalType: string
+    signerVariablePaths:
+      type: object
+      description: Map of NFT owner address to Windmill Secret Variable path
+        containing a private key; ignored during dry-run.
+      default: {}
+      format: resource-record
+    snapshot:
+      type: object
+      description: Fixed-block output from collect_snapshot used for freshness and
+        on-chain state rechecks.
+      default: null
+      format: resource-snapshot
+  required:
+    - snapshot
+    - allocations

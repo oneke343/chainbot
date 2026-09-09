@@ -1,0 +1,39 @@
+summary: Discover veAERO NFTs and collect a fixed-block snapshot
+description: Reads direct veAERO ownership, current voting state, live gauges,
+  and deposited rewards for one consistent Base block. This stage is read-only
+  and does not access signing secrets or send transactions.
+lock: '!inline f/aerodrome/scripts/voting/collect_snapshot.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    rpcChunkSize:
+      type: integer
+      description: Maximum number of contract reads placed in one Multicall request;
+        larger values reduce round trips but may exceed an RPC payload limit.
+      default: 1000
+      maximum: 1000
+      minimum: 100
+    rpcConcurrency:
+      type: integer
+      description: Number of Multicall requests executed concurrently; lower this
+        value when the RPC provider rate-limits parallel requests.
+      default: 4
+      maximum: 8
+      minimum: 1
+    rpcUrl:
+      type: string
+      description: Base JSON-RPC URL used for all fixed-block contract reads.
+      default: https://base-rpc.publicnode.com
+      originalType: string
+    walletAddresses:
+      type: array
+      description: Base owner addresses whose directly held veAERO NFTs should be
+        discovered automatically.
+      default: null
+      items:
+        type: string
+      originalType: string[]
+  required:
+    - walletAddresses

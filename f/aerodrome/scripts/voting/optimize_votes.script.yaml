@@ -1,0 +1,25 @@
+summary: Filter candidate pools and optimize veAERO votes
+description: Applies optional candidate-pool noise filters, solves the aggregate
+  concave reward allocation, and returns relative Voter weights plus per-stage
+  metrics. This stage is deterministic for a given snapshot and does not send
+  transactions.
+lock: '!inline f/aerodrome/scripts/voting/optimize_votes.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    options:
+      type: object
+      description: Partial optimization policy. Candidate filters are disabled when
+        their thresholds are zero.
+      default: {}
+      format: resource-partial
+    snapshot:
+      type: object
+      description: Fixed-block output from collect_snapshot; contains NFT voting
+        power, pool votes, and current epoch rewards.
+      default: null
+      format: resource-snapshot
+  required:
+    - snapshot

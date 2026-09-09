@@ -110,6 +110,10 @@ export type Policy = {
   dilution: number;
   maxShare: number;
   rewardHaircut: number;
+  candidateMinRewardUsd: number;
+  candidateMinRewardPerVoteUsd: number;
+  candidateMinExpectedGainUsd: number;
+  candidatePoolLimit: number;
   maxGasUsd: number;
   minNetUsd: number;
   executionLeadSeconds: number;
@@ -121,6 +125,10 @@ export const DEFAULT_POLICY: Policy = {
   dilution: 1.15,
   maxShare: 1,
   rewardHaircut: 0.1,
+  candidateMinRewardUsd: 0,
+  candidateMinRewardPerVoteUsd: 0,
+  candidateMinExpectedGainUsd: 0,
+  candidatePoolLimit: 0,
   maxGasUsd: 2,
   minNetUsd: 0,
   executionLeadSeconds: 7200,
@@ -154,6 +162,11 @@ export function validatePolicy(p: Policy) {
   assert(
     p.rewardHaircut >= 0 &&
       p.rewardHaircut < 1 &&
+      p.candidateMinRewardUsd >= 0 &&
+      p.candidateMinRewardPerVoteUsd >= 0 &&
+      p.candidateMinExpectedGainUsd >= 0 &&
+      Number.isInteger(p.candidatePoolLimit) &&
+      p.candidatePoolLimit >= 0 &&
       p.maxGasUsd > 0 &&
       p.minNetUsd >= 0,
     "Invalid cost policy",
@@ -176,32 +189,103 @@ export function clientFor(rpcUrl: string) {
     transport: http(rpcUrl, { timeout: 30000, retryCount: 2 }),
   });
 }
+
+export type ReadConfig = {
+  rpcChunkSize?: number;
+  rpcConcurrency?: number;
+};
+const DEFAULT_READ_CONFIG = {
+  rpcChunkSize: 1000,
+  rpcConcurrency: 4,
+} as const;
+function readConfig(config?: ReadConfig) {
+  const chunkSize = config?.rpcChunkSize ?? DEFAULT_READ_CONFIG.rpcChunkSize;
+  const concurrency = config?.rpcConcurrency ?? DEFAULT_READ_CONFIG.rpcConcurrency;
+  assert(
+    Number.isInteger(chunkSize) && chunkSize >= 100 && chunkSize <= 1000,
+    "rpcChunkSize must be an integer from 100 to 1000",
+  );
+  assert(
+    Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 8,
+    "rpcConcurrency must be an integer from 1 to 8",
+  );
+  return { rpcChunkSize: chunkSize, rpcConcurrency: concurrency };
+}
+
+/**
+ * Split work into chunks and process those chunks with bounded concurrency.
+ * A worker claims the next chunk synchronously before awaiting, so at most
+ * `concurrency` mapper calls are in flight. Flattening chunk results in chunk
+ * order preserves the input order when the mapper returns one result per item.
+ */
+export async function mapChunksWithConcurrency<T, R>(
+  items: readonly T[],
+  chunkSize: number,
+  concurrency: number,
+  mapper: (chunk: readonly T[], chunkIndex: number) => Promise<readonly R[]>,
+): Promise<R[]> {
+  assert(Number.isInteger(chunkSize) && chunkSize >= 1, "Invalid chunk size");
+  assert(Number.isInteger(concurrency) && concurrency >= 1, "Invalid concurrency");
+  if (!items.length) return [];
+  const chunks = Array.from(
+    { length: Math.ceil(items.length / chunkSize) },
+    (_, index) => items.slice(index * chunkSize, (index + 1) * chunkSize),
+  );
+  const chunkResults = new Array<readonly R[]>(chunks.length);
+  let next = 0;
+  async function worker() {
+    while (true) {
+      const chunkIndex = next++;
+      if (chunkIndex >= chunks.length) return;
+      chunkResults[chunkIndex] = await mapper(chunks[chunkIndex], chunkIndex);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, chunks.length) }, () => worker()),
+  );
+  return chunkResults.flatMap((results) => results);
+}
+
 // Fixed-block Multicall3 reads; failed required calls never turn into zeroes.
+// Chunking and concurrency are delegated to the generic scheduler above, so
+// this function stays focused on RPC semantics and failure handling.
 async function many(
   client: PublicClient,
   block: bigint,
   calls: Call[],
   optional = false,
+  config?: ReadConfig,
 ): Promise<any[]> {
-  const out: any[] = [];
-  for (let i = 0; i < calls.length; i += 100) {
-    const part = calls.slice(i, i + 100);
-    const results = await client.multicall({
-      blockNumber: block,
-      allowFailure: true,
-      batchSize: 0,
-      contracts: part.map((c) => ({ ...c, abi: ABI })) as any,
-    });
-    results.forEach((r, j) => {
-      if (r.status === "failure") {
-        assert(
-          optional,
-          `Contract read failed: ${part[j].address} ${part[j].functionName}`,
-        );
-        out.push(null);
-      } else out.push(r.result);
-    });
-  }
+  if (!calls.length) return [];
+  const { rpcChunkSize, rpcConcurrency } = readConfig(config);
+  const entries = await mapChunksWithConcurrency(
+    calls,
+    rpcChunkSize,
+    rpcConcurrency,
+    async (part) => {
+      const results = await client.multicall({
+        blockNumber: block,
+        allowFailure: true,
+        batchSize: 0,
+        authorizationList: undefined,
+        contracts: part.map((c) => ({ ...c, abi: ABI })) as any,
+      });
+      return results.map((result, index) => ({
+        result,
+        request: part[index],
+      }));
+    },
+  );
+  const out: any[] = new Array(calls.length);
+  entries.forEach(({ result, request }, index) => {
+    if (result.status === "failure") {
+      assert(
+        optional,
+        `Contract read failed: ${request.address} ${request.functionName}`,
+      );
+      out[index] = null;
+    } else out[index] = result.result;
+  });
   return out;
 }
 function call(
@@ -211,96 +295,118 @@ function call(
 ): Call {
   return { address, functionName, args };
 }
-export async function discover(
+async function readNft(
+  client: PublicClient,
+  block: bigint,
+  id: bigint,
+  owners: Address[],
+  epoch: number,
+  config?: ReadConfig,
+): Promise<Nft> {
+  const [owner, power, kind, managed, lock, last, used] = await many(
+    client,
+    block,
+    [
+      call(VE, "ownerOf", id),
+      call(VE, "balanceOfNFT", id),
+      call(VE, "escrowType", id),
+      call(VE, "idToManaged", id),
+      call(VE, "locked", id),
+      call(VOTER, "lastVoted", id),
+      call(VOTER, "usedWeights", id),
+    ],
+    false,
+    config,
+  );
+  assert(
+    owners.some((o) => o.toLowerCase() === owner.toLowerCase()),
+    "NFT owner changed during enumeration",
+  );
+  const current: Record<string, string> = {};
+  if (used > 0n) {
+    let sum = 0n;
+    for (let i = 0; i < 1024 && sum < used; i += 32) {
+      const addresses = await many(
+        client,
+        block,
+        Array.from({ length: 32 }, (_, j) =>
+          call(VOTER, "poolVote", id, BigInt(i + j)),
+        ),
+        true,
+        config,
+      );
+      const valid = addresses.filter((a): a is Address => a !== null);
+      assert(valid.length > 0, "Incomplete prior vote enumeration");
+      const weights: bigint[] = await many(
+        client,
+        block,
+        valid.map((p) => call(VOTER, "votes", id, p)),
+        false,
+        config,
+      );
+      valid.forEach((p, j) => {
+        assert(!(p.toLowerCase() in current), "Duplicate prior pool");
+        current[p.toLowerCase()] = weights[j].toString();
+        sum += weights[j];
+      });
+    }
+    assert(sum === used, "Prior votes do not match usedWeights");
+  }
+  const reason =
+    Number(kind) !== 0
+      ? "managed_or_relay"
+      : power === 0n
+        ? "zero_power"
+        : Number(last) >= epoch
+          ? "already_voted"
+          : undefined;
+  return {
+    tokenId: id.toString(),
+    owner,
+    power: power.toString(),
+    lastVoted: Number(last),
+    escrowType: Number(kind),
+    managedId: managed.toString(),
+    permanent: lock[2],
+    current,
+    eligible: !reason,
+    reason,
+  };
+}
+
+/** Discover direct veAERO ownership, NFT state, and movable prior votes. */
+export async function discoverNfts(
   client: PublicClient,
   block: bigint,
   owners: Address[],
   epoch: number,
+  config?: ReadConfig,
 ): Promise<Nft[]> {
   const counts = await many(
     client,
     block,
     owners.map((o) => call(VE, "balanceOf", o)),
+    false,
+    config,
   );
   const queries = owners.flatMap((o, i) =>
     Array.from({ length: count(counts[i], 1000, "NFT count") }, (_, j) =>
       call(VE, "ownerToNFTokenIdList", o, BigInt(j)),
     ),
   );
-  const ids: bigint[] = await many(client, block, queries);
+  const ids: bigint[] = await many(client, block, queries, false, config);
   assert(
     new Set(ids.map(String)).size === ids.length,
     "Duplicate NFT enumeration",
   );
-  const nfts: Nft[] = [];
-  for (const id of ids) {
-    const [owner, power, kind, managed, lock, last, used] = await many(
-      client,
-      block,
-      [
-        call(VE, "ownerOf", id),
-        call(VE, "balanceOfNFT", id),
-        call(VE, "escrowType", id),
-        call(VE, "idToManaged", id),
-        call(VE, "locked", id),
-        call(VOTER, "lastVoted", id),
-        call(VOTER, "usedWeights", id),
-      ],
-    );
-    assert(
-      owners.some((o) => o.toLowerCase() === owner.toLowerCase()),
-      "NFT owner changed during enumeration",
-    );
-    const current: Record<string, string> = {};
-    if (used > 0n) {
-      let sum = 0n;
-      for (let i = 0; i < 1024 && sum < used; i += 32) {
-        const addresses = await many(
-          client,
-          block,
-          Array.from({ length: 32 }, (_, j) =>
-            call(VOTER, "poolVote", id, BigInt(i + j)),
-          ),
-          true,
-        );
-        const valid = addresses.filter((a): a is Address => a !== null);
-        assert(valid.length > 0, "Incomplete prior vote enumeration");
-        const weights: bigint[] = await many(
-          client,
-          block,
-          valid.map((p) => call(VOTER, "votes", id, p)),
-        );
-        valid.forEach((p, j) => {
-          assert(!(p.toLowerCase() in current), "Duplicate prior pool");
-          current[p.toLowerCase()] = weights[j].toString();
-          sum += weights[j];
-        });
-      }
-      assert(sum === used, "Prior votes do not match usedWeights");
-    }
-    const reason =
-      Number(kind) !== 0
-        ? "managed_or_relay"
-        : power === 0n
-          ? "zero_power"
-          : Number(last) >= epoch
-            ? "already_voted"
-            : undefined;
-    nfts.push({
-      tokenId: id.toString(),
-      owner,
-      power: power.toString(),
-      lastVoted: Number(last),
-      escrowType: Number(kind),
-      managedId: managed.toString(),
-      permanent: lock[2],
-      current,
-      eligible: !reason,
-      reason,
-    });
-  }
-  return nfts;
+  const { rpcConcurrency } = readConfig(config);
+  return mapChunksWithConcurrency(ids, 1, rpcConcurrency, async (chunk) => [
+    await readNft(client, block, chunk[0], owners, epoch, config),
+  ]);
 }
+
+// Backward-compatible name for callers that only need NFT discovery.
+export const discover = discoverNfts;
 type Price = { price: number; timestamp: number; confidence?: number };
 export async function prices(
   tokens: Address[],
@@ -333,59 +439,46 @@ export async function prices(
   }
   return map;
 }
-export async function collect(
+
+export type PoolDiscovery = {
+  pools: Pool[];
+  ethUsd: number;
+  unpriced: string[];
+  registeredPools: number;
+  activePools: number;
+};
+
+/** Discover live gauges, reward contracts, reward amounts, and valuations. */
+export async function discoverPools(
   client: PublicClient,
-  walletAddresses: string[],
-): Promise<Snapshot> {
-  assert(
-    walletAddresses.length > 0 && walletAddresses.length <= 50,
-    "Provide 1..50 wallet addresses",
-  );
-  assert(
-    walletAddresses.every((a) => isAddress(a) && a.toLowerCase() !== ZERO),
-    "Invalid wallet address",
-  );
-  const owners = [...new Set(walletAddresses.map((a) => a.toLowerCase()))].map(
-    (a) => getAddress(a),
-  );
-  assert((await client.getChainId()) === 8453, "RPC must be Base (8453)");
-  const block = await client.getBlock({ blockTag: "latest" });
-  assert(block.number !== null, "Missing block number");
-  const [ve, voter, epoch, start, end, maxPools, n] = await many(
-    client,
-    block.number,
-    [
-      call(VOTER, "ve"),
-      call(VE, "voter"),
-      call(VOTER, "epochStart", block.timestamp),
-      call(VOTER, "epochVoteStart", block.timestamp),
-      call(VOTER, "epochVoteEnd", block.timestamp),
-      call(VOTER, "maxVotingNum"),
-      call(VOTER, "length"),
-    ],
-  );
-  assert(
-    ve.toLowerCase() === VE.toLowerCase() &&
-      voter.toLowerCase() === VOTER.toLowerCase(),
-    "Aerodrome deployment mismatch",
-  );
-  const nfts = await discover(client, block.number, owners, Number(epoch));
+  block: bigint,
+  timestamp: bigint,
+  epoch: bigint,
+  poolCount: bigint,
+  config?: ReadConfig,
+): Promise<PoolDiscovery> {
   const addresses: Address[] = await many(
     client,
-    block.number,
-    Array.from({ length: count(n, 50000, "Pool count") }, (_, i) =>
+    block,
+    Array.from({ length: count(poolCount, 50000, "Pool count") }, (_, i) =>
       call(VOTER, "pools", BigInt(i)),
     ),
+    false,
+    config,
   );
   const gauges: Address[] = await many(
     client,
-    block.number,
+    block,
     addresses.map((p) => call(VOTER, "gauges", p)),
+    false,
+    config,
   );
   const alive: boolean[] = await many(
     client,
-    block.number,
+    block,
     gauges.map((g) => call(VOTER, "isAlive", g)),
+    false,
+    config,
   );
   const active = addresses
     .map((p, i) => ({ address: p, gauge: gauges[i] }))
@@ -395,12 +488,14 @@ export async function collect(
   );
   const details = await many(
     client,
-    block.number,
+    block,
     active.flatMap((p) => [
       call(VOTER, "weights", p.address),
       call(VOTER, "gaugeToFees", p.gauge),
       call(VOTER, "gaugeToBribe", p.gauge),
     ]),
+    false,
+    config,
   );
   const pools: Pool[] = active.map((p, i) => ({
     ...p,
@@ -414,8 +509,10 @@ export async function collect(
   ]);
   const lengths: bigint[] = await many(
     client,
-    block.number,
+    block,
     rewardContracts.map((r) => call(r.address, "rewardsListLength")),
+    false,
+    config,
   );
   const entries = rewardContracts.flatMap((r, i) =>
     Array.from(
@@ -425,15 +522,19 @@ export async function collect(
   );
   const tokens: Address[] = await many(
     client,
-    block.number,
+    block,
     entries.map((e) => call(e.address, "rewards", BigInt(e.index))),
+    false,
+    config,
   );
   const amounts: bigint[] = await many(
     client,
-    block.number,
+    block,
     entries.map((e, i) =>
       call(e.address, "tokenRewardsPerEpoch", tokens[i], epoch),
     ),
+    false,
+    config,
   );
   const unique = [
     ...new Set(
@@ -443,16 +544,17 @@ export async function collect(
         .concat(WETH.toLowerCase()),
     ),
   ] as Address[];
-  const priceMap = await prices(unique, Number(block.timestamp));
+  const priceMap = await prices(unique, Number(timestamp));
   assert(
     priceMap.has(WETH.toLowerCase()),
     "Fresh WETH/USD price is required for gas limits",
   );
   const decimals = await many(
     client,
-    block.number,
+    block,
     unique.map((t) => call(t, "decimals")),
     true,
+    config,
   );
   const decimalMap = new Map(unique.map((t, i) => [t, decimals[i]]));
   entries.forEach((e, i) => {
@@ -481,13 +583,6 @@ export async function collect(
     ),
   ];
   return {
-    block: block.number.toString(),
-    timestamp: Number(block.timestamp),
-    epoch: Number(epoch),
-    voteStart: Number(start),
-    voteEnd: Number(end),
-    maxPools: Number(maxPools),
-    nfts,
     pools,
     ethUsd: priceMap.get(WETH.toLowerCase())!,
     unpriced,
@@ -496,17 +591,99 @@ export async function collect(
   };
 }
 
-// Concave allocation: R * (fixed + x) / (external + fixed + x).
-// Greedy subset selection and an all-pool relaxation provide two candidate
-// solutions. Keep the better one; cardinality remains a heuristic constraint.
-export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
-  validatePolicy(policy);
-  const eligible = snapshot.nfts.filter((n) => n.eligible),
-    power = eligible.reduce((s, n) => s + BigInt(n.power), 0n),
-    total = units(power);
-  if (power === 0n) return [];
-  const k = Math.min(policy.maxPools, snapshot.maxPools);
-  const candidates = snapshot.pools
+export async function collect(
+  client: PublicClient,
+  walletAddresses: string[],
+  config?: ReadConfig,
+): Promise<Snapshot> {
+  assert(
+    walletAddresses.length > 0 && walletAddresses.length <= 50,
+    "Provide 1..50 wallet addresses",
+  );
+  assert(
+    walletAddresses.every((a) => isAddress(a) && a.toLowerCase() !== ZERO),
+    "Invalid wallet address",
+  );
+  const owners = [...new Set(walletAddresses.map((a) => a.toLowerCase()))].map(
+    (a) => getAddress(a),
+  );
+  assert((await client.getChainId()) === 8453, "RPC must be Base (8453)");
+  const block = await client.getBlock({ blockTag: "latest" });
+  assert(block.number !== null, "Missing block number");
+  const [ve, voter, epoch, start, end, maxPools, n] = await many(
+    client,
+    block.number,
+    [
+      call(VOTER, "ve"),
+      call(VE, "voter"),
+      call(VOTER, "epochStart", block.timestamp),
+      call(VOTER, "epochVoteStart", block.timestamp),
+      call(VOTER, "epochVoteEnd", block.timestamp),
+      call(VOTER, "maxVotingNum"),
+      call(VOTER, "length"),
+    ],
+    false,
+    config,
+  );
+  assert(
+    ve.toLowerCase() === VE.toLowerCase() &&
+      voter.toLowerCase() === VOTER.toLowerCase(),
+    "Aerodrome deployment mismatch",
+  );
+  // Both branches use the same fixed block but do not depend on each other's
+  // results, so run them in parallel after deployment validation.
+  const [nfts, poolDiscovery] = await Promise.all([
+    discoverNfts(client, block.number, owners, Number(epoch), config),
+    discoverPools(
+      client,
+      block.number,
+      block.timestamp,
+      epoch,
+      n,
+      config,
+    ),
+  ]);
+  return {
+    block: block.number.toString(),
+    timestamp: Number(block.timestamp),
+    epoch: Number(epoch),
+    voteStart: Number(start),
+    voteEnd: Number(end),
+    maxPools: Number(maxPools),
+    nfts,
+    ...poolDiscovery,
+  };
+}
+
+type Candidate = {
+  p: Pool;
+  r: number;
+  b: number;
+  f: number;
+  density: number;
+  maxGain: number;
+};
+export type OptimizationMetrics = {
+  eligibleNfts: number;
+  totalVotingPower: string;
+  valuedPools: number;
+  candidatePools: number;
+  filteredPools: number;
+  selectedPools: number;
+  selectedPoolAddresses: Address[];
+  estimatedRewardUsd: number;
+};
+
+function prepareCandidates(
+  snapshot: Snapshot,
+  policy: Policy,
+  total: number,
+): { candidates: Candidate[]; valuedPools: number } {
+  // Build one candidate per valued, live pool. `b` is external voting power
+  // (all local NFT votes are removed first), while `f` is local power that the
+  // current run cannot move. `maxGain` is an upper bound used only for safe
+  // pre-filtering/ranking; the exact allocation is solved below.
+  const valued = snapshot.pools
     .filter((p) => p.rewardUsd > 0)
     .map((p) => {
       const all = snapshot.nfts.reduce(
@@ -520,15 +697,88 @@ export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
           0n,
         );
       assert(BigInt(p.votes) >= all, "Pool votes smaller than owned votes");
+      const r = p.rewardUsd * (1 - policy.rewardHaircut);
+      const b = Math.max(1e-18, units(BigInt(p.votes) - all) * policy.dilution);
+      const f = units(fixed);
+      const cap = Math.min(total * policy.maxShare, total);
+      const maxGain =
+        r * ((f + cap) / (b + f + cap) - f / (b + f));
       return {
         p,
-        r: p.rewardUsd * (1 - policy.rewardHaircut),
-        b: Math.max(1e-18, units(BigInt(p.votes) - all) * policy.dilution),
-        f: units(fixed),
+        r,
+        b,
+        f,
+        density: r / Math.max(b + f, 1e-18),
+        maxGain,
       };
     });
-  if (candidates.length === 0) return [];
+  if (!valued.length) return { candidates: [], valuedPools: 0 };
+
+  const minimum = Math.ceil(1 / policy.maxShare - 1e-10);
+  const passes = (c: Candidate) =>
+    c.p.rewardUsd >= policy.candidateMinRewardUsd &&
+    c.density >= policy.candidateMinRewardPerVoteUsd &&
+    c.maxGain >= policy.candidateMinExpectedGainUsd;
+  let candidates = valued.filter(passes);
+
+  // Thresholds are allowed to be strict, but never leave maxShare infeasible.
+  // If the user asks for an aggressive filter, the best potential pools are
+  // put back until at least `minimum` pools remain.
+  if (candidates.length < minimum) {
+    const fallback = valued
+      .filter((c) => !candidates.includes(c))
+      .sort((a, b) => b.maxGain - a.maxGain || b.r - a.r);
+    candidates = [...candidates, ...fallback.slice(0, minimum - candidates.length)];
+  }
+
+  if (policy.candidatePoolLimit > 0 && candidates.length > policy.candidatePoolLimit) {
+    const limit = Math.max(minimum, policy.candidatePoolLimit);
+    candidates = candidates
+      .sort((a, b) => b.maxGain - a.maxGain || b.r - a.r)
+      .slice(0, limit);
+  }
+  return { candidates, valuedPools: valued.length };
+}
+
+// Concave allocation: R * (fixed + x) / (external + fixed + x).
+//
+// Important sequencing: this function solves one aggregate problem using the
+// sum of every eligible NFT's power. It does not choose pools NFT by NFT. The
+// resulting relative weights are later copied to each NFT, which realizes the
+// same aggregate `x` because Voter scales weights by that NFT's own power.
+// Greedy subset selection and an all-pool relaxation provide two candidate
+// solutions. Keep the better one; cardinality remains a heuristic constraint.
+export function optimizeDetailed(
+  snapshot: Snapshot,
+  policy: Policy,
+): { allocations: Allocation[]; metrics: OptimizationMetrics } {
+  validatePolicy(policy);
+  const eligible = snapshot.nfts.filter((n) => n.eligible),
+    power = eligible.reduce((s, n) => s + BigInt(n.power), 0n),
+    total = units(power);
+  const emptyMetrics = (valuedPools = 0, candidatePools = 0): OptimizationMetrics => ({
+    eligibleNfts: eligible.length,
+    totalVotingPower: power.toString(),
+    valuedPools,
+    candidatePools,
+    filteredPools: Math.max(0, valuedPools - candidatePools),
+    selectedPools: 0,
+    selectedPoolAddresses: [],
+    estimatedRewardUsd: 0,
+  });
+  if (power === 0n) return { allocations: [], metrics: emptyMetrics() };
+  const k = Math.min(policy.maxPools, snapshot.maxPools);
+  const prepared = prepareCandidates(snapshot, policy, total),
+    candidates = prepared.candidates;
+  if (candidates.length === 0)
+    return { allocations: [], metrics: emptyMetrics(prepared.valuedPools) };
   const solve = (items: typeof candidates) => {
+    // KKT/water-filling solution. For
+    //   V(x) = r * (f + x) / (b + f + x),
+    // the marginal return is r*b/(b+f+x)^2. Setting every active pool's
+    // marginal return to the common threshold `mid` gives the square-root
+    // allocation below. Binary search finds the threshold whose allocations
+    // consume the total eligible power.
     assert(
       items.length * policy.maxShare >= 1 - 1e-10,
       "Too few valued pools for maxShare",
@@ -556,6 +806,8 @@ export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
       ),
     );
   };
+  // First solve without a pool-count limit. This exposes which pools deserve
+  // power naturally; the top `k` become the relaxed cardinality candidate.
   const relaxed = solve(candidates);
   const relaxedSelection = candidates
     .map((c, i) => ({ c, x: relaxed[i] }))
@@ -582,18 +834,25 @@ export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
     if (!best) break;
     greedy.push(best);
   }
+  // The pool-count constraint is combinatorial. Compare the greedy subset with
+  // the relaxed subset and keep the higher-valued re-optimized solution.
   const selected = greedy.length && value(greedy) >= value(relaxedSelection) ? greedy : relaxedSelection;
   const amounts = solve(selected);
   const SCALE = 1000000000000n;
   const weights = amounts.map((x) =>
     x > 0 ? BigInt(Math.max(1,Math.floor((x / total) * Number(SCALE)))) : 0n,
   );
-  // Flooring leaves a few parts per trillion unused; Voter normalizes weights.
+  // Voter expects relative weights, not absolute veAERO amounts. One 1e12
+  // scale gives enough precision for small NFTs; flooring leaves only a few
+  // parts per trillion unused and Voter normalizes the remaining sum.
   const positive = selected
     .map((c, i) => ({ c, w: weights[i] }))
     .filter((v) => v.w > 0n);
   assert(positive.length > 0, "Allocation rounded to zero");
   const sum = positive.reduce((s, v) => s + v.w, 0n);
+  // Every eligible NFT receives the same pool vector. Its actual pool votes
+  // are proportional to n.power inside Voter.vote, so a 1-power NFT and a
+  // 99-power NFT contribute 1% and 99% of the aggregate allocation.
   const allocations = eligible.map((n) => {
     const usable = positive.filter((v) => (BigInt(n.power) * v.w) / sum > 0n);
     assert(
@@ -628,7 +887,23 @@ export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
       return s + (v.c.r * own) / (v.c.b + v.c.f + added);
     }, 0);
   });
-  return allocations;
+  return {
+    allocations,
+    metrics: {
+      eligibleNfts: eligible.length,
+      totalVotingPower: power.toString(),
+      valuedPools: prepared.valuedPools,
+      candidatePools: candidates.length,
+      filteredPools: Math.max(0, prepared.valuedPools - candidates.length),
+      selectedPools: positive.length,
+      selectedPoolAddresses: positive.map((v) => v.c.p.address),
+      estimatedRewardUsd: allocations.reduce((s, a) => s + a.estimatedRewardUsd, 0),
+    },
+  };
+}
+
+export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
+  return optimizeDetailed(snapshot, policy).allocations;
 }
 
 export function executionWindow(
@@ -657,6 +932,42 @@ export type ExecutionDeps = {
   readJournal(): Promise<Journal>;
   writeJournal(journal: Journal): Promise<void>;
 };
+export function makeExecutionDeps(
+  signerVariablePaths: Record<string, string> = {},
+): ExecutionDeps {
+  return {
+    async accountFor(owner) {
+      const path = Object.entries(signerVariablePaths).find(
+        ([a]) => a.toLowerCase() === owner.toLowerCase(),
+      )?.[1];
+      assert(
+        path && /^[uf]\//.test(path),
+        `Missing signer secret variable path for ${owner}`,
+      );
+      let value: string;
+      try {
+        value = await wmill.getVariable(path);
+      } catch {
+        throw new Error("Unable to read signer secret variable");
+      }
+      assert(
+        /^0x[0-9a-fA-F]{64}$/.test(value),
+        "Signer variable must contain a hex private key",
+      );
+      try {
+        return privateKeyToAccount(value as Hex);
+      } catch {
+        throw new Error("Invalid signing key");
+      }
+    },
+    async readJournal() {
+      return (await wmill.getState("f/aerodrome/__vote_state")) ?? {};
+    },
+    async writeJournal(journal) {
+      await wmill.setState(journal, "f/aerodrome/__vote_state");
+    },
+  };
+}
 export async function execute(
   client: PublicClient,
   snapshot: Snapshot,
@@ -764,12 +1075,14 @@ export async function execute(
       abi: oracleAbi,
       functionName: "getL1Fee",
       args: [envelope],
+      authorizationList: undefined,
     });
     const operator = await client.readContract({
       address: "0x420000000000000000000000000000000000000F",
       abi: oracleAbi,
       functionName: "getOperatorFee",
       args: [gasLimit],
+      authorizationList: undefined,
     });
     const feeWei = gasLimit * fees.maxFeePerGas + (l1 + operator) * 2n;
     const gasUsd = units(feeWei) * snapshot.ethUsd;
@@ -881,76 +1194,4 @@ export async function execute(
     });
   }
   return results;
-}
-
-export async function main(
-  walletAddresses: string[],
-  rpcUrl = "https://base-rpc.publicnode.com",
-  dryRun = true,
-  signerVariablePaths: Record<string, string> = {},
-  options: Partial<Policy> = {},
-) {
-  assert(typeof dryRun === "boolean", "dryRun must be a boolean");
-  const policy = { ...DEFAULT_POLICY, ...options };
-  validatePolicy(policy);
-  const client = clientFor(rpcUrl);
-  const snapshot = await collect(client, walletAddresses);
-  const allocations = optimize(snapshot, policy);
-  // Credentials are fetched only inside execution, never returned in step output.
-  const deps: ExecutionDeps = {
-    async accountFor(owner) {
-      const path = Object.entries(signerVariablePaths).find(
-        ([a]) => a.toLowerCase() === owner.toLowerCase(),
-      )?.[1];
-      assert(
-        path && /^[uf]\//.test(path),
-        `Missing signer secret variable path for ${owner}`,
-      );
-      let value: string;
-      try {
-        value = await wmill.getVariable(path);
-      } catch {
-        throw new Error("Unable to read signer secret variable");
-      }
-      assert(
-        /^0x[0-9a-fA-F]{64}$/.test(value),
-        "Signer variable must contain a hex private key",
-      );
-      try {
-        return privateKeyToAccount(value as Hex);
-      } catch {
-        throw new Error("Invalid signing key");
-      }
-    },
-    async readJournal() {
-      return (await wmill.getState("f/aerodrome/__vote_state")) ?? {};
-    },
-    async writeJournal(journal) {
-      await wmill.setState(journal, "f/aerodrome/__vote_state");
-    },
-  };
-  if (!dryRun)
-    for (const a of allocations)
-      assert(
-        Object.keys(signerVariablePaths).some(
-          (o) => o.toLowerCase() === a.owner.toLowerCase(),
-        ),
-        `Missing signer configuration for ${a.owner}`,
-      );
-  const execution = await execute(
-    client,
-    snapshot,
-    allocations,
-    policy,
-    dryRun,
-    deps,
-  );
-  return {
-    dryRun,
-    objective:
-      "Current deposited rewards at reference USD prices, haircut and dilution adjusted; no future reward guarantee",
-    snapshot,
-    allocations,
-    execution,
-  };
 }

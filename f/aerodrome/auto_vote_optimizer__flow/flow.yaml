@@ -1,13 +1,51 @@
 summary: 多 NFT veAERO 自动投票优化
-description: 按地址发现 NFT，读取当周链上奖励和票数，联合优化、模拟并可选签名投票。默认 dry-run。
+description: 分阶段发现 NFT、读取固定区块快照、预筛候选池、联合优化、模拟并可选签名投票。默认 dry-run。
 value:
   modules:
-    - id: vote
-      summary: Discover, collect, optimize and vote
+    - id: collect
+      summary: Discover veAERO NFTs and collect a fixed-block market snapshot
       value:
-        type: rawscript
-        content: '!inline vote.ts'
+        type: script
         input_transforms:
+          rpcUrl:
+            type: javascript
+            expr: flow_input.rpcUrl ?? 'https://base-rpc.publicnode.com'
+          rpcChunkSize:
+            type: javascript
+            expr: flow_input.rpcChunkSize ?? 1000
+          rpcConcurrency:
+            type: javascript
+            expr: flow_input.rpcConcurrency ?? 4
+          walletAddresses:
+            type: javascript
+            expr: flow_input.walletAddresses
+        path: f/aerodrome/scripts/voting/collect_snapshot
+      timeout:
+        type: static
+        value: 900
+    - id: optimize
+      summary: Filter candidate pools and optimize aggregate veAERO allocation
+      value:
+        type: script
+        input_transforms:
+          options:
+            type: javascript
+            expr: flow_input.options ?? {}
+          snapshot:
+            type: javascript
+            expr: results.collect.snapshot
+        path: f/aerodrome/scripts/voting/optimize_votes
+      timeout:
+        type: static
+        value: 900
+    - id: execute
+      summary: Simulate and optionally sign, broadcast and confirm votes
+      value:
+        type: script
+        input_transforms:
+          allocations:
+            type: javascript
+            expr: results.optimize.allocations
           dryRun:
             type: javascript
             expr: flow_input.dryRun ?? true
@@ -20,11 +58,10 @@ value:
           signerVariablePaths:
             type: javascript
             expr: flow_input.signerVariablePaths ?? {}
-          walletAddresses:
+          snapshot:
             type: javascript
-            expr: flow_input.walletAddresses
-        lock: '!inline vote.lock'
-        language: bun
+            expr: results.collect.snapshot
+        path: f/aerodrome/scripts/voting/execute_votes
       timeout:
         type: static
         value: 1800
@@ -35,52 +72,97 @@ schema:
   properties:
     dryRun:
       type: boolean
+      description: 仅读取、优化并模拟投票；为 false 时才会读取密钥并广播交易。
       default: true
     options:
       type: object
+      description: 优化、候选池筛选、执行窗口和费用保护参数；未填写项使用默认值。
       additionalProperties: false
       default: {}
       properties:
+        candidateMinExpectedGainUsd:
+          type: number
+          description: 候选池在本次总投票权上限下的最低潜在增量收益（USD）。
+          default: 0
+          minimum: 0
+        candidateMinRewardPerVoteUsd:
+          type: number
+          description: 候选池奖励除以外部及固定票数后的最低收益密度（USD/veAERO）。
+          default: 0
+          minimum: 0
+        candidateMinRewardUsd:
+          type: number
+          description: 候选池当前 epoch 已入账奖励的最低美元估值。
+          default: 0
+          minimum: 0
+        candidatePoolLimit:
+          type: integer
+          description: 预筛阶段最多保留的候选池数量；0 表示不限制。
+          default: 0
+          maximum: 845
+          minimum: 0
         deadlineBufferSeconds:
           type: integer
+          description: 投票截止前保留的安全缓冲时间，超过该时间不再发送交易。
           default: 600
         dilution:
           type: number
+          description: 外部投票增长的保守倍数，用于降低对当前票数快照的过拟合。
           default: 1.15
           maximum: 10
           minimum: 1
         executionLeadSeconds:
           type: integer
+          description: 允许发送交易的截止前时间范围起点，默认截止前两小时。
           default: 7200
         maxGasUsd:
           type: number
+          description: 单个 NFT 交易的最高预估 Gas 美元成本保护阈值。
           default: 2
           exclusiveMinimum: 0
         maxPools:
           type: integer
+          description: 单次投票最多选择的池子数量。
           default: 10
           maximum: 30
           minimum: 1
         maxShare:
           type: number
+          description: 单个池子最多占全部可投 veAERO 的比例。
           default: 1
           exclusiveMinimum: 0
           maximum: 1
         maxSnapshotAgeSeconds:
           type: integer
+          description: 执行阶段允许使用的快照最大年龄，超过后要求重新计算。
           default: 900
         minNetUsd:
           type: number
+          description: 单个 NFT 交易要求达到的最低预估净收益（USD）。
           default: 0
           minimum: 0
         rewardHaircut:
           type: number
+          description: 对当前奖励估值应用的保守折扣比例。
           default: 0.1
           exclusiveMaximum: 1
           minimum: 0
     rpcUrl:
       type: string
+      description: Base JSON-RPC URL；生产环境建议使用有配额和归档读取能力的节点。
       default: https://base-rpc.publicnode.com
+    rpcChunkSize:
+      type: integer
+      description: 每个 Multicall 请求包含的最大合约读取数；默认 1000，允许范围 100 到 1000。较大值可减少往返次数，但可能超过 RPC 请求体限制。
+      default: 1000
+      minimum: 100
+      maximum: 1000
+    rpcConcurrency:
+      type: integer
+      description: 同时执行的 Multicall 请求数；默认 4，公共 RPC 限流时可降低。
+      default: 4
+      minimum: 1
+      maximum: 8
     signerVariablePaths:
       type: object
       additionalProperties:
@@ -90,8 +172,7 @@ schema:
       default: {}
     walletAddresses:
       type: array
-      description: Base owner addresses; discovers all directly owned veAERO NFTs
-        automatically
+      description: Base 链钱包地址；流程会自动发现这些地址直接持有的 veAERO NFT。
       items:
         type: string
         pattern: ^0x[0-9a-fA-F]{40}$

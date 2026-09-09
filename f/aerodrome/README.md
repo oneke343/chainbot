@@ -2,11 +2,11 @@
 
 入口：`f/aerodrome/auto_vote_optimizer`，摘要：多 NFT veAERO 自动投票优化。
 
-只需填写钱包地址，流程会自动发现直接持有的 veAERO NFT、读取当周池子奖励和票数、估值并分配投票权。执行模式还会模拟、签名、广播、等待两次确认并核验链上投票。没有奖励领取、兑换或复投操作。
+Flow 现在拆成三个可单独观察的阶段：`collect` 发现 NFT 并读取固定区块快照，`optimize` 预筛候选池并计算合计票权分配，`execute` 模拟、签名、广播、确认并核验链上投票。每个阶段返回 `stage`、`elapsedMs` 和阶段指标，Windmill job step 也会单独记录耗时和结果。没有奖励领取、兑换或复投操作。
 
 ## 配置与运行
 
-默认 RPC 为 `https://base-rpc.publicnode.com`，Base chain ID 为 8453。合约地址已内置，每次运行通过 `Voter.ve()` 和 `VotingEscrow.voter()` 双向校验。无需填写合约、ABI、selector、池子快照或 NFT ID。
+默认 RPC 为 `https://base-rpc.publicnode.com`，Base chain ID 为 8453。合约地址已内置，每次运行通过 `Voter.ve()` 和 `VotingEscrow.voter()` 双向校验。无需填写合约、ABI、selector、池子快照或 NFT ID。collect 阶段默认每个 Multicall 包含 1000 个读取并发执行 4 个请求；可用 `rpcChunkSize`（100–1000）和 `rpcConcurrency`（1–8）按 RPC 服务商调节。公共 RPC 若出现请求体过大或限流，可将两项调低。
 
 只读运行参数：
 
@@ -47,7 +47,31 @@
 
 每池边际收益随追加票数递减。分别计算贪心增加池子和全池连续解筛选后的方案，保留预期收益较高者；有池子数量约束时是启发式算法，不保证全局最优。多 NFT 按同一组合比例分配，估计收益按实际整数权重重新计算。可用 `maxPools`（默认 10）和 `maxShare`（默认 1）限制集中度。
 
-默认只在普通投票截止前两小时至前十分钟发送交易。每次执行再检查区块时间、epoch、归属、NFT 类型、投票权和是否已投；交易模拟覆盖 Gauge 状态和合约限制。Gas 门槛包含 L2 费用以及 Base GasPriceOracle 的 L1/operator 费用保守预估，默认每个 NFT 上限 2 美元、净收益下限 0 美元。费用和净收益均是预估，不是成交保证。
+### optimize_votes 的投票计算
+
+`optimize_votes` 接收 `collect_snapshot` 的完整快照，不重新读取链上数据。它先把所有 `eligible` NFT 的 `power` 相加，得到本次可移动的总投票权 `total`。因此池子选择基于所有 NFT 的合计 power，不会先用某个小 NFT 选择池子，再把结果复制给大 NFT。
+
+对每个有价格奖励的池子，代码从 `p.votes` 中减去所有本地 NFT 的旧票：可移动 NFT 的旧票会被下一次 `Voter.vote` 重置，不能再次算进竞争分母；不可移动 NFT 的旧票保留为 `fixed`。剩余票数乘 `dilution` 形成保守的外部票 `b`，当前 epoch 奖励乘 `1 - rewardHaircut` 形成奖励价值 `r`。
+
+候选预筛使用三个可选阈值。`candidateMinRewardUsd` 过滤奖励尘埃；`candidateMinRewardPerVoteUsd` 过滤奖励密度过低的池子；`candidateMinExpectedGainUsd` 使用“最多投入本次总 power 后的理论增量收益”过滤潜力仍不足的池子。`candidatePoolLimit` 按该理论增量收益排序截断。筛选后如果池子数量不足以满足 `ceil(1 / maxShare)`，代码会从原候选集中按潜在收益回填，避免集中度约束变成不可执行。
+
+对保留下来的池子，`solve` 最大化：
+
+```text
+reward(p) × (fixed(p) + x(p))
+           -----------------------------
+           external(p) + fixed(p) + x(p)
+```
+
+其中 `x(p)` 是全部 eligible NFT 合计新增到池子 `p` 的票。每个池子的边际收益会递减，所以代码通过 180 次二分搜索寻找共同边际收益阈值；无池子数量约束的结果称为 relaxed solution，再和逐个加入池子的 greedy solution 比较，选择总收益较高者。
+
+求出合计 `x(p)` 后，代码把它转换成 `1e12` 精度的相对权重。例如 `600000000000` 和 `400000000000` 表示 60/40，而不是 6000 和 4000 个 veAERO。每个 NFT 的 `vote(tokenId, pools, weights)` 都使用这组相对权重。Aerodrome Voter 会按该 NFT 自己的 `balanceOfNFT` 计算实际池子票数，因此 power 为 1 和 power 为 99 的 NFT 会分别贡献 1% 和 99% 的合计分配。代码还检查整数舍入后每个 NFT 对每个选中池子仍有正票，避免小 NFT 静默丢失某个池子的票。
+
+`optimize_votes` 返回的 `allocations` 只是投票计划和 calldata。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段会用同一 epoch 的新状态重新模拟并核验 NFT 归属、投票权和窗口。
+
+候选池预筛默认关闭（四个 `candidate*` 参数均为 0），因此默认行为不会因阈值改变。需要缩小噪音池时，可在 `options` 中配置：`candidateMinRewardUsd` 是本周最低美元奖励，`candidateMinRewardPerVoteUsd` 是奖励除以当前外部加固定票数的最低密度，`candidateMinExpectedGainUsd` 是在本次总投票权和 `maxShare` 上限下的最低潜在增量收益，`candidatePoolLimit` 是预筛后最多保留的池子数量。预筛会自动保留足够满足 `maxShare` 的池子；阈值过严不会让约束失效，而是按潜在增量收益回填。建议先观察 `optimize.metrics`，再逐步提高阈值。低票高奖励池不会因为票少被默认删除。
+
+Gas 不参与池子选择和投票权分配模型。执行阶段仍保留 Gas 上限和最低净收益检查，作为异常费用保护；Base Gas 正常时不会改变优化结果。默认只在普通投票截止前两小时至前十分钟发送交易。每次执行再检查区块时间、epoch、归属、NFT 类型、投票权和是否已投；交易模拟覆盖 Gauge 状态和合约限制。费用和净收益均是预估，不是成交保证。
 
 ## 状态与恢复
 

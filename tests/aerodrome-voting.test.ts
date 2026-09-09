@@ -3,14 +3,16 @@ import assert from "node:assert/strict";
 import { parseUnits, decodeFunctionData, type Address } from "viem";
 import {
   optimize,
+  optimizeDetailed,
   executionWindow,
   validatePolicy,
   execute,
+  mapChunksWithConcurrency,
   DEFAULT_POLICY,
   ABI,
   type Snapshot,
   type Nft,
-} from "../f/aerodrome/auto_vote_optimizer__flow/vote.ts";
+} from "../f/aerodrome/lib/vote.ts";
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 const raw = (n: number) => parseUnits(String(n), 18).toString();
 function nft(id: number, power: number): Nft {
@@ -58,6 +60,24 @@ function fixture(): Snapshot {
   };
 }
 const policy = { ...DEFAULT_POLICY, dilution: 1, rewardHaircut: 0 };
+test("chunked concurrency preserves order and bounds in-flight work", async () => {
+  let active = 0;
+  let maxActive = 0;
+  const result = await mapChunksWithConcurrency(
+    [1, 2, 3, 4, 5],
+    2,
+    2,
+    async (chunk, chunkIndex) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, chunkIndex === 0 ? 8 : 1));
+      active -= 1;
+      return chunk.map((value) => value * 10);
+    },
+  );
+  assert.equal(maxActive, 2);
+  assert.deepEqual(result, [10, 20, 30, 40, 50]);
+});
 test("joint rewards include self dilution and match the analytic optimum", () => {
   const s = fixture(),
     plans = optimize(s, policy);
@@ -163,6 +183,37 @@ test("asymmetric rewards match marginal-return water filling", () => {
   const idx=p.pools.findIndex(a=>a===s.pools[0].address);
   const ratio=Number(p.weights[idx])/p.weights.reduce((sum,w)=>sum+Number(w),0);
   assert.ok(Math.abs(ratio-5/6)<1e-8);
+});
+
+test("candidate filtering reports reductions and preserves maxShare feasibility", () => {
+  const s = fixture();
+  s.pools.push({
+    address: addr(3),
+    gauge: addr(13),
+    votes: raw(1000),
+    rewardUsd: 1,
+    rewards: [],
+  });
+  const result = optimizeDetailed(s, {
+    ...policy,
+    candidateMinRewardUsd: 50,
+    candidatePoolLimit: 1,
+  });
+  assert.equal(result.metrics.valuedPools, 3);
+  assert.equal(result.metrics.candidatePools, 1);
+  assert.equal(result.metrics.filteredPools, 2);
+  assert.equal(result.metrics.selectedPools, 1);
+  assert.equal(result.allocations.length, 2);
+});
+
+test("strict candidate thresholds fall back to enough pools for concentration cap", () => {
+  const result = optimizeDetailed(fixture(), {
+    ...policy,
+    maxShare: 0.5,
+    candidateMinRewardUsd: 1_000_000,
+  });
+  assert.equal(result.metrics.candidatePools, 2);
+  assert.equal(result.metrics.selectedPools, 2);
 });
 
 test("execution gates prevent signing outside the window and after simulation failure", async () => {
