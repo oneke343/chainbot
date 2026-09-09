@@ -10,7 +10,7 @@ Flow 现在拆成三个可单独观察的阶段：`collect` 发现 NFT 并读取
 
 Sugar 地址以官方仓库的 Base deployment 清单为准，而不是从官网前端 bundle 猜地址。不同发布版本可能使用不同的 Sugar 实例；运行时指针校验会在读取前发现这类版本漂移，并让流程失败，而不是混用不兼容的返回结构。
 
-实现上，`lib/sugar.ts` 只负责 Sugar ABI 和原始数据读取，`lib/pool_view.ts` 负责分页 view 合约读取，`lib/rpc.ts` 负责 Multicall、分块和并发；`lib/vote.ts` 负责池目录、Snapshot、优化和执行。
+实现上，`lib/sugar.ts` 只负责 Sugar ABI 和原始数据读取，`lib/pool_view.ts` 负责分页 view 合约读取，`lib/rpc.ts` 负责 Multicall、分块和并发；`lib/snapshot.ts` 负责固定区块快照和奖励估值，`lib/optimizer.ts` 是不依赖链上执行的纯优化核心，`lib/execution.ts` 负责模拟、签名、广播、journal 和结果确认；`lib/vote.ts` 只保留兼容旧调用方的公共 facade。
 池子发现不调用 `LpSugar.count/all`，因此不会扫描 Sugar 的全量历史池索引；`AerodromePoolView.activePoolsWithRewards` 直接按 Voter 当前活跃 Gauge 聚合 `weights`、epoch 奖励和 token decimals。
 
 `collect_snapshot` 的 `metrics` 现在会报告 `deploymentValidationMs`、`sugarValidationMs`、`nftDiscoveryMs`、`poolDiscoveryMs`，以及 `steps` 下的 `sugarNftMs`、`sugarPoolMs` 和奖励估值耗时。NFT 与池子 discovery 是并行的，因此两者的耗时不能直接相加；先比较两者的较大值，再查看对应 `steps` 项。NFT 读取只使用 `VeSugar.byAccount`；如果 RPC 拒绝该聚合调用，流程直接失败，请更换 RPC 或调整服务商限制。
@@ -34,7 +34,7 @@ Flow 输入中的执行参数统一放在 `execution` 对象：`dryRun`、`voteE
 }
 ```
 
-`execution.dryRun` 默认开启，既不读取签名密钥，也不写执行状态或广播交易。只有当前区块时间严格位于快照的 `voteStart` 和 `voteEnd` 之间，才会执行交易模拟；窗口外返回 `outside_voting_window`，不伪称模拟成功。
+`execution.dryRun` 默认开启且不会广播交易。未配置 `adminVariablePath` 时，它不读取签名密钥，直接用 `eth_call` 模拟已编码的 `voteMany` 交易；配置后会继续走 gas、nonce 和本地签名流程，再用 `eth_call` 模拟签名交易的执行参数，但仍不写执行状态、不提交交易。正式执行时 gas 估算会作为发送前的执行检查。只有当前区块时间严格位于快照的 `voteStart` 和 `voteEnd` 之间，才会执行交易模拟；窗口外返回 `outside_voting_window`，不伪称模拟成功。
 
 无人值守执行统一使用最小权限 `VoteExecutor`：在 Base 部署本仓库的 `contracts/aerodrome/VoteExecutor.sol`，构造参数只填写 admin 地址；然后由 NFT owner 在 `VotingEscrow` 上对每个 tokenId 单独执行 `approve(executor, tokenId)`。owner 的私钥不进入 Windmill，Windmill 只保存 admin 的加密 Secret Variable。执行器没有 fallback、任意 call 或升级入口，只能通过 `voteMany` 将固定格式的投票转发到固定的 Aerodrome Voter。admin 还可以轮换 admin 权限并恢复误转入执行器的 ERC20/ETH；admin 私钥泄漏时，攻击者能影响投票和执行器内已有资产，因此应使用专用 admin 地址。
 
@@ -70,7 +70,7 @@ Flow 输入中的执行参数统一放在 `execution` 对象：`dryRun`、`voteE
 
 连续分配最大化 `Σ R × (f + x) / (b + f + x)`：`R` 为折扣后的奖励价值，`f` 为自己的固定票，`b` 为其他票，`x` 为本次新增票。默认将其他票乘 1.15，奖励乘 0.9；这些是可配置保守假设，不是训练出的预测。
 
-每池边际收益随追加票数递减。分别计算贪心增加池子和全池连续解筛选后的方案，保留预期收益较高者；有池子数量约束时是启发式算法，不保证全局最优。多 NFT 按同一组合比例分配，估计收益按实际整数权重重新计算。单次最多选择的池子数量直接使用同一快照中的 Voter `maxVotingNum`；可用 `maxShare`（默认 1）限制集中度。
+每池边际收益随追加票数递减。分别计算贪心增加池子和全池连续解筛选后的方案，保留预期收益较高者；有池子数量约束时是启发式算法，不保证全局最优。多 NFT 按同一组合比例分配，估计收益按实际整数权重重新计算。单次最多选择的池子数量直接使用同一快照中的 Voter `maxVotingNum`；可用 `maxShare`（默认 1）限制集中度，并用 `minSelectedShare`（默认 0.5%）清理最终分配过小的噪音池后重新优化。
 
 ### optimize_votes 的投票计算
 
@@ -92,9 +92,9 @@ reward(p) × (fixed(p) + x(p))
 
 求出合计 `x(p)` 后，代码把它转换成 `1e12` 精度的相对权重。例如 `600000000000` 和 `400000000000` 表示 60/40，而不是 6000 和 4000 个 veAERO。每个 NFT 的 voteMany 参数都使用这组相对权重。Aerodrome Voter 会按该 NFT 自己的 `balanceOfNFT` 计算实际池子票数，因此 power 为 1 和 power 为 99 的 NFT 会分别贡献 1% 和 99% 的合计分配。代码还检查整数舍入后每个 NFT 对每个选中池子仍有正票，避免小 NFT 静默丢失某个池子的票。
 
-`optimize_votes` 返回的 `allocations` 只是 tokenId、池子、相对权重和收益估计组成的投票计划。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段只接收区块、epoch 和投票起止时间等执行元数据，并用同一 epoch 的新状态重新组装 `voteMany` calldata，模拟并核验 NFT 归属、投票权和投票窗口。
+`optimize_votes` 返回的 `allocations` 只是 tokenId、池子、相对权重和收益估计组成的投票计划。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段只接收区块、epoch 和投票起止时间等执行元数据，并用同一 epoch 的新状态重新组装 `voteMany` calldata，模拟并核验 NFT 归属、投票权和投票窗口。`execute_votes` 的 `execution` 返回值按批次列出 `batches`，每个批次包含交易参数以及 `simulation` 或 `broadcast` 结果；`skipped` 单独记录每个 NFT 的跳过原因。dry-run 的 `signedHash` 仅表示本地签名结果，不代表已经上链。
 
-候选池预筛默认关闭（两个 `candidate*` 参数均为 0），因此默认行为不会因阈值改变。需要缩小噪音池时，可在 `options` 中配置 `candidateMinVotes` 和 `candidateMinRewardPerVoteUsd`；二者同时启用时，仅过滤低票且低收益密度的池子。内部 `maxGain` 仍用于 fallback 排序和组合优化，但不再作为用户可配置的预筛阈值。预筛会自动保留足够满足 `maxShare` 的池子；阈值过严不会让约束失效，而是按内部潜在收益上界回填。建议先观察 `optimize.metrics`，再逐步提高阈值。
+候选池预筛默认关闭（两个 `candidate*` 参数均为 0），因此默认行为不会因候选阈值改变。需要缩小候选噪音时，可在 `options` 中配置 `candidateMinVotes` 和 `candidateMinRewardPerVoteUsd`；二者同时启用时，仅过滤低票且低收益密度的池子。`excludedPools` 可用于手动排除已知异常或不希望投票的池子，这些池子不会进入候选集合，也不会被 fallback 重新加入。内部 `maxGain` 仍用于 fallback 排序和组合优化，但不再作为用户可配置的预筛阈值。候选预筛之后，最终结果还会按 `minSelectedShare`（默认 0.005，即 0.5%）删除低分配池并重新求解；设置为 0 时关闭经济阈值，但仍会删除低于 `1e-12` 相对权重精度的池子。预筛会自动保留足够满足 `maxShare` 的池子；阈值过严不会让约束失效，而是按内部潜在收益上界回填。建议先观察 `optimize.metrics`，再逐步提高阈值。
 
 Gas 不参与池子选择和投票权分配模型。交易可以在快照记录的 `voteStart` 与 `voteEnd` 之间发送。每次执行再检查区块时间、归属、投票权和是否已投；NFT 类型由输入假设为普通 veNFT，交易模拟仍覆盖 Gauge 状态和合约限制。
 
@@ -102,7 +102,7 @@ Gas 不参与池子选择和投票权分配模型。交易可以在快照记录�
 
 执行日志保存在 `f/aerodrome/__vote_state`（已排除 Git 同步），键为 `epoch:tokenId`。日志在广播前记录签名交易 hash 和 nonce，不保存私钥或原始签名交易。
 
-广播超时或进程崩溃后，重跑优先查询已记录 hash；成功交易不会再次发送。无法确认 hash 时会停止并报告 hash/nonce，包括“签名后、广播前崩溃”的情况，需要管理员核对链上 nonce 和交易再处理该条日志；不会盲目签署新交易。已上链失败交易允许重新模拟后重试。确认后的结果还检查 `lastVoted` 和池子票数。
+广播超时或进程崩溃后，重跑优先查询已记录 hash；成功交易不会再次发送。无法确认 hash 时会停止并报告 hash/nonce，包括“签名后、广播前崩溃”的情况，需要管理员核对链上 nonce 和交易再处理该条日志；不会盲目签署新交易。已上链失败交易允许重新模拟后重试。确认结果以交易 receipt 成功为准；执行前仍会检查 NFT 归属、投票权、重复投票状态和投票窗口。
 
 零投票权及本周已投 NFT 会明确标记跳过。当前输入假设 NFT 是直接持有的普通永久锁仓；Relay、locked 或 managed NFT 不做额外类型读取，若传入这类 NFT，投票模拟或交易会按协议规则失败。
 

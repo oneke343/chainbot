@@ -34,7 +34,7 @@ export async function validateSugar(
   voter: Address,
   ve: Address,
 ) {
-  const [veVoter, sugarVe] = await many(
+  const [veVoter, sugarVe] = await many<Address>(
     client,
     block,
     [
@@ -60,14 +60,14 @@ export async function readVeNfts(
   const pages =
     owners.length === 1
       ? [
-          (await readOne(
+          await readOne<SugarVeNft[]>(
             client,
             block,
             callWithAbi(VE_SUGAR, "byAccount", VE_SUGAR_ABI, owners[0]),
             VE_SUGAR_ABI,
-          )) as SugarVeNft[],
+          ),
         ]
-      : ((await many(
+      : await many<SugarVeNft[]>(
           client,
           block,
           owners.map((owner) =>
@@ -76,6 +76,6 @@ export async function readVeNfts(
           VE_SUGAR_ABI,
           false,
           config,
-        )) as SugarVeNft[][]);
+        );
   return pages.flat();
 }

@@ -1,5 +1,6 @@
 import { parseAbi, type Address } from "viem";
 import {
+  assert,
   callWithAbi,
   mapWithConcurrency,
   readOne,
@@ -8,6 +9,7 @@ import {
 } from "./rpc.ts";
 
 export const POOL_VIEW_ABI = parseAbi([
+  "function AERODROME_VOTER() view returns (address)",
   "function activePoolsWithRewards(uint256,uint256,uint256) view returns (uint256,(address,address,uint256,(address,uint256,uint8,bool,uint8)[])[])",
 ]);
 
@@ -39,13 +41,33 @@ export async function readPoolView(
   block: bigint,
   epoch: bigint,
   viewAddress: Address,
+  expectedVoter: Address,
   config?: ReadConfig,
 ): Promise<PoolViewResult> {
   const pageSize = config?.poolViewPageSize ?? DEFAULT_PAGE_SIZE;
   if (!Number.isInteger(pageSize) || pageSize < 10 || pageSize > 100)
     throw new Error("poolViewPageSize must be an integer from 10 to 100");
+  const boundVoter = await readOne<Address>(
+    client,
+    block,
+    callWithAbi(viewAddress, "AERODROME_VOTER", POOL_VIEW_ABI),
+    POOL_VIEW_ABI,
+  );
+  assert(
+    boundVoter.toLowerCase() === expectedVoter.toLowerCase(),
+    "AerodromePoolView is bound to a different Voter",
+  );
   const readPage = async (offset: number) => {
-    const [registeredPools, rawPools] = (await readOne(
+    type PoolViewPage = [
+      bigint,
+      readonly [
+        Address,
+        Address,
+        bigint,
+        readonly [Address, bigint, number, boolean, number][],
+      ][],
+    ];
+    const [registeredPools, rawPools] = await readOne<PoolViewPage>(
       client,
       block,
       callWithAbi(
@@ -57,7 +79,7 @@ export async function readPoolView(
         epoch,
       ),
       POOL_VIEW_ABI,
-    )) as [bigint, readonly [Address, Address, bigint, readonly [Address, bigint, number, boolean, number][]][]];
+    );
     return {
       registeredPools: Number(registeredPools),
       pools: rawPools.map(([pool, gauge, votes, rewards]) => ({

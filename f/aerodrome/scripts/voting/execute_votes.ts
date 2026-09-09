@@ -11,10 +11,11 @@ import {
 import { getAddress } from "viem";
 
 /**
- * Stage 3: re-check the snapshot, simulate every vote, and optionally sign,
- * broadcast, confirm, and journal it. In VoteExecutor mode, executorBatchSize
- * groups NFT votes into atomic voteMany transactions. Secrets are resolved only
- * here.
+ * Stage 3: re-check the snapshot and simulate every vote. With an admin secret,
+ * dry-run also estimates, signs locally, and simulates the signed transaction
+ * without broadcasting; with dryRun false it additionally sends, confirms, and
+ * journals it. In VoteExecutor mode, executorBatchSize groups NFT votes into
+ * atomic voteMany transactions.
  */
 export async function main(
   snapshot: ExecutionSnapshot,
@@ -54,11 +55,14 @@ export async function main(
     execution,
     metrics: {
       allocations: allocations.length,
-      simulated: execution.filter((r) => r.status === "simulated").length,
-      confirmed: execution.filter((r) => r.status === "confirmed").length,
-      skipped: execution.filter((r) =>
-        ["already_voted", "outside_voting_window"].includes(String(r.status)),
-      ).length,
+      batches: execution.batches.length,
+      simulated: execution.batches
+        .filter((batch) => batch.status === "simulated")
+        .reduce((count, batch) => count + batch.tokenIds.length, 0),
+      confirmed: execution.batches
+        .filter((batch) => batch.status === "confirmed")
+        .reduce((count, batch) => count + batch.tokenIds.length, 0),
+      skipped: execution.skipped.length,
     },
   };
 }

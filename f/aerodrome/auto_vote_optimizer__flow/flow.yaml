@@ -102,7 +102,7 @@ schema:
       properties:
         dryRun:
           type: boolean
-          description: 仅读取、优化并模拟投票；为 false 时才会读取 admin 密钥并广播交易。
+          description: 模拟投票且不广播；若配置 admin 密钥，dry-run 会本地签名后再用 eth_call 模拟。为 false 时才会广播交易。
           default: true
         voteExecutor:
           type: string
@@ -114,7 +114,7 @@ schema:
           pattern: ^0x[0-9a-fA-F]{40}$
         adminVariablePath:
           type: string
-          description: 必填的 Windmill Secret Variable 路径，保存 VoteExecutor admin 私钥；输入中只能填写路径，不能填写私钥。dry-run 不会读取该密钥。
+          description: Windmill Secret Variable 路径，保存 VoteExecutor admin 私钥；输入中只能填写路径，不能填写私钥。配置后 dry-run 会读取并本地签名，但不会广播。
         executorBatchSize:
           type: integer
           description: 单笔原子 voteMany 交易包含的 NFT 数量，范围 1 到 50；批量交易任一 NFT 失败时整笔交易回退。
@@ -147,6 +147,13 @@ schema:
           default: 1.15
           maximum: 10
           minimum: 1
+        excludedPools:
+          type: array
+          description: 手动排除的池子地址列表；这些池子不会参与候选筛选、fallback 或最终投票分配。
+          default: []
+          items:
+            type: string
+            pattern: ^0x[0-9a-fA-F]{40}$
         maxShare:
           type: number
           description: 单个池子最多占全部可投 veAERO 的比例。
@@ -157,6 +164,12 @@ schema:
           type: integer
           description: 执行阶段允许使用的快照最大年龄，超过后要求重新计算。
           default: 900
+        minSelectedShare:
+          type: number
+          description: 最终选中池子的最低投票权比例；低于该比例的池子会被删除并重新优化，默认 0.5%。设置为 0 时仅按权重精度清理。
+          default: 0.005
+          minimum: 0
+          maximum: 1
         rewardHaircut:
           type: number
           description: 对当前奖励估值应用的保守折扣比例。

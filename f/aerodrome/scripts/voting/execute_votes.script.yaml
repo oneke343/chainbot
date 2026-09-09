@@ -1,9 +1,10 @@
 summary: Simulate and execute veAERO votes
 description: Revalidates the snapshot and NFT state, simulates each vote batch,
-  and when dryRun is false signs, broadcasts, confirms, and journals each
-  transaction. The admin secret is the only signing secret read; the wrapper
-  forwards only atomic VoteExecutor.voteMany operations; owner signing secrets
-  are never read.
+  and when an admin secret is configured, dry-run also signs locally and
+  simulates the signed transaction without broadcasting. When dryRun is false,
+  it broadcasts, confirms, and journals each transaction. The admin secret is
+  the only signing secret read; the wrapper forwards only atomic
+  VoteExecutor.voteMany operations; owner signing secrets are never read.
 lock: '!inline f/aerodrome/scripts/voting/execute_votes.script.lock'
 kind: script
 schema:
@@ -18,8 +19,9 @@ schema:
       originalType: string
     adminVariablePath:
       type: string
-      description: Windmill Secret Variable path containing the admin private key; the
-        key is not read during dry-run.
+      description: Windmill Secret Variable path containing the admin private key;
+        when set, dry-run signs locally for a final eth_call simulation but
+        never broadcasts.
       default: ''
       originalType: string
     allocations:
@@ -33,8 +35,9 @@ schema:
       originalType: resource[]
     dryRun:
       type: boolean
-      description: Simulate and report transactions without reading signing secrets or
-        broadcasting when true.
+      description: Simulate and report transactions without broadcasting when true; if
+        adminVariablePath is set, also sign locally and simulate the signed
+        transaction.
       default: true
     executorBatchSize:
       type: integer

@@ -211,11 +211,11 @@ const executorConfig = {
   adminAddress: account.address,
 };
 const simulated = await execute(client, snapshot, plans, policy, true, deps, executorConfig);
-assert.ok(simulated.every((r) => r.status === "simulated"));
+assert.ok(simulated.batches.every((r) => r.status === "simulated"));
 const sent = await execute(client, snapshot, plans, policy, false, deps, executorConfig);
-assert.ok(sent.every((r) => r.status === "confirmed"));
+assert.ok(sent.batches.every((r) => r.status === "confirmed"));
 const repeated = await execute(client, snapshot, plans, policy, false, deps, executorConfig);
-assert.ok(repeated.every((r) => r.status === "already_voted"));
+assert.ok(repeated.skipped.every((r) => r.reason === "already_voted"));
 await local("anvil_setIntervalMining", [0]);
 console.log(
   JSON.stringify(
@@ -224,9 +224,9 @@ console.log(
       active: snapshot.activePools,
       valued: snapshot.pools.filter((p) => p.rewardUsd > 0).length,
       nfts: plans.map((p) => p.tokenId),
-      simulation: simulated.map((r) => r.status),
-      execution: sent,
-      repeat: repeated.map((r) => r.status),
+      simulation: simulated.batches,
+      execution: sent.batches,
+      repeat: repeated.skipped,
       journalEntries: Object.keys(journal).length,
     },
     null,

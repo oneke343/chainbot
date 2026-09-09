@@ -6,12 +6,16 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 
-export type Call = {
+/** A dynamic contract read with its decoded result type supplied by the adapter. */
+export type Call<T = unknown> = {
   address: Address;
   functionName: string;
   args?: readonly unknown[];
   abi?: Abi;
 };
+type MulticallResult =
+  | { status: "success"; result: unknown }
+  | { status: "failure"; result?: undefined; error?: unknown };
 export type PublicClient = ReturnType<typeof clientFor>;
 export type ReadConfig = {
   rpcChunkSize?: number;
@@ -81,14 +85,38 @@ async function mapChunksWithConcurrency<T, R>(
   return chunkResults.flatMap((results) => results);
 }
 
-export async function many(
+export function many<T>(
   client: PublicClient,
   block: bigint,
-  calls: Call[],
+  calls: readonly Call<T>[],
+  defaultAbi: Abi,
+  optional?: false,
+  config?: ReadConfig,
+): Promise<T[]>;
+export function many<T>(
+  client: PublicClient,
+  block: bigint,
+  calls: readonly Call<T>[],
+  defaultAbi: Abi,
+  optional: true,
+  config?: ReadConfig,
+): Promise<(T | null)[]>;
+export function many<T>(
+  client: PublicClient,
+  block: bigint,
+  calls: readonly Call<T>[],
+  defaultAbi: Abi,
+  optional: boolean,
+  config?: ReadConfig,
+): Promise<(T | null)[]>;
+export async function many<T = unknown>(
+  client: PublicClient,
+  block: bigint,
+  calls: readonly Call<T>[],
   defaultAbi: Abi,
   optional = false,
   config?: ReadConfig,
-): Promise<any[]> {
+): Promise<(T | null)[]> {
   if (!calls.length) return [];
   assert(calls.length > 1, "Use readOne for a single contract read");
   const { rpcChunkSize, rpcConcurrency } = readConfig(config);
@@ -97,55 +125,78 @@ export async function many(
     rpcChunkSize,
     rpcConcurrency,
     async (part) => {
-      const results = await client.multicall({
-        blockNumber: block,
-        allowFailure: true,
-        batchSize: 0,
-        contracts: part.map((c) => ({ ...c, abi: c.abi ?? defaultAbi })) as any,
-      });
+      const results = (await client.multicall(
+        {
+          blockNumber: block,
+          allowFailure: true,
+          batchSize: 0,
+          contracts: part.map((c) => ({
+            ...c,
+            abi: c.abi ?? defaultAbi,
+          })) as Parameters<PublicClient["multicall"]>[0]["contracts"],
+        } as Parameters<PublicClient["multicall"]>[0],
+      )) as MulticallResult[];
       return results.map((result, index) => ({ result, request: part[index] }));
     },
   );
-  const out: any[] = new Array(calls.length);
+  const out: (T | null)[] = new Array(calls.length);
   entries.forEach(({ result, request }, index) => {
     if (result.status === "failure") {
       assert(optional, `Contract read failed: ${request.address} ${request.functionName}`);
       out[index] = null;
-    } else out[index] = result.result;
+    } else out[index] = result.result as T;
   });
   return out;
 }
 
-export async function readOne(
+export function readOne<T>(
   client: PublicClient,
   block: bigint,
-  request: Call,
+  request: Call<T>,
+  defaultAbi: Abi,
+  optional?: false,
+): Promise<T>;
+export function readOne<T>(
+  client: PublicClient,
+  block: bigint,
+  request: Call<T>,
+  defaultAbi: Abi,
+  optional: true,
+): Promise<T | null>;
+export async function readOne<T = unknown>(
+  client: PublicClient,
+  block: bigint,
+  request: Call<T>,
   defaultAbi: Abi,
   optional = false,
-): Promise<any> {
+): Promise<T | null> {
   try {
-    return await client.readContract({
+    return (await client.readContract({
       blockNumber: block,
       address: request.address,
       abi: request.abi ?? defaultAbi,
       functionName: request.functionName,
       args: request.args,
-    } as any);
+    } as Parameters<PublicClient["readContract"]>[0])) as T;
   } catch (error) {
     if (optional) return null;
     throw error;
   }
 }
 
-export function call(address: Address, functionName: string, ...args: unknown[]): Call {
+export function call<T = unknown>(
+  address: Address,
+  functionName: string,
+  ...args: unknown[]
+): Call<T> {
   return { address, functionName, args };
 }
-export function callWithAbi(
+export function callWithAbi<T = unknown>(
   address: Address,
   functionName: string,
   abi: Abi,
   ...args: unknown[]
-): Call {
+): Call<T> {
   return { address, functionName, args, abi };
 }
 

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseUnits, decodeFunctionData, type Address } from "viem";
+import { parseUnits, decodeFunctionData, type Address, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import {
   optimize,
   optimizeDetailed,
@@ -15,6 +16,7 @@ import {
   type Snapshot,
   type Nft,
 } from "../f/aerodrome/lib/vote.ts";
+import { readPoolView } from "../f/aerodrome/lib/pool_view.ts";
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 const raw = (n: number) => parseUnits(String(n), 18).toString();
 function nft(id: number, power: number): Nft {
@@ -77,6 +79,17 @@ test("bounded concurrency preserves order and bounds in-flight work", async () =
   );
   assert.equal(maxActive, 2);
   assert.deepEqual(result, [10, 20, 30, 40, 50]);
+});
+test("PoolView must be bound to the official Voter before reading pool data", async () => {
+  const fake = {
+    async readContract() {
+      return addr(999);
+    },
+  } as unknown as Parameters<typeof readPoolView>[0];
+  await assert.rejects(
+    readPoolView(fake, 1n, 1n, addr(500), VOTER),
+    /different Voter/,
+  );
 });
 test("joint rewards include self dilution and match the analytic optimum", () => {
   const s = fixture(),
@@ -217,24 +230,54 @@ test("strict candidate thresholds fall back to enough pools for concentration ca
   assert.equal(result.metrics.selectedPools, 2);
 });
 
-test("execution gates prevent signing after epoch end and after simulation failure", async () => {
+test("minimum selected share removes tiny pools before weight encoding", () => {
+  const result = optimizeDetailed(fixture(), {
+    ...policy,
+    minSelectedShare: 0.51,
+  });
+  assert.equal(result.metrics.selectedPools, 1);
+  assert.deepEqual(result.allocations[0].weights, ["1000000000000"]);
+});
+
+test("excluded pools are removed before candidate selection and fallback", () => {
+  const excluded = fixture().pools[0].address;
+  const result = optimizeDetailed(fixture(), {
+    ...policy,
+    excludedPools: [`0x${excluded.slice(2).toUpperCase()}` as typeof excluded],
+  });
+  assert.deepEqual(result.metrics.selectedPoolAddresses, [addr(2)]);
+  assert.equal(result.allocations[0].pools[0], addr(2));
+});
+
+test("excluded pool addresses must be valid non-zero addresses", () => {
+  assert.throws(
+    () => validatePolicy({ ...policy, excludedPools: ["not-an-address"] as never }),
+    /excludedPools/,
+  );
+  assert.throws(
+    () => validatePolicy({ ...policy, excludedPools: ["0x0000000000000000000000000000000000000000"] as never }),
+    /excludedPools/,
+  );
+});
+
+test("execution gates prevent signing after epoch end and gas estimation failure", async () => {
   const s=fixture();s.timestamp=s.voteEnd-3600;
-  const plans=optimize(s,policy);let simulated=0, signed=0;
+  const plans=optimize(s,policy);let signed=0;
   const fake={
     async getBlock(){return {number:2n,timestamp:BigInt(s.timestamp)};},
     async multicall(){return [plans[0].owner,0n,BigInt(plans[0].power),0].map(result=>({status:"success",result}));},
-    async simulateContract(){simulated++;throw Error("revert");},
+    async estimateContractGas(){throw Error("revert");},
     async readContract(args: { functionName: string }) {
       return args.functionName === "admin" ? addr(901) : VOTER;
     },
   } as unknown as Parameters<typeof execute>[0];
   const deps={async readJournal(){return {};},async writeJournal(){},async adminAccount(){signed++;throw Error("must not sign");}};
   const config = { voteExecutor: addr(900), adminAddress: addr(901) };
-  await assert.rejects(execute(fake,s,[plans[0]],policy,false,deps,config),/simulation failed/);
-  assert.equal(simulated,1);assert.equal(signed,0);
+  await assert.rejects(execute(fake,s,[plans[0]],policy,false,deps,config),/revert/);
+  assert.equal(signed,0);
   s.timestamp=s.voteEnd;
   const expired=await execute(fake,s,[plans[0]],policy,false,deps,config);
-  assert.equal(expired[0].status,"outside_voting_window");assert.equal(simulated,1);assert.equal(signed,0);
+  assert.equal(expired.skipped[0].reason,"outside_voting_window");assert.equal(signed,0);
 });
 
 test("executor mode simulates with the admin and wrapper target", async () => {
@@ -243,7 +286,7 @@ test("executor mode simulates with the admin and wrapper target", async () => {
   const allocation = optimize(s, policy)[0];
   const executor = addr(900);
   const admin = addr(901);
-  let simulation: { address: Address; account: Address } | undefined;
+  let simulation: { to: Address; account: Address } | undefined;
   const fake = {
     async getBlock() {
       return { number: 2n, timestamp: BigInt(s.timestamp) };
@@ -254,8 +297,9 @@ test("executor mode simulates with the admin and wrapper target", async () => {
         result,
       }));
     },
-    async simulateContract(args: { address: Address; account: Address }) {
-      simulation = { address: args.address, account: args.account };
+    async call(args: { to: Address; account: Address }) {
+      simulation = { to: args.to, account: args.account };
+      return { data: "0x" };
     },
     async estimateContractGas() {
       return 100000n;
@@ -275,12 +319,15 @@ test("executor mode simulates with the admin and wrapper target", async () => {
     [allocation],
     policy,
     true,
-    { async readJournal(){return {};}, async writeJournal(){}, async adminAccount(){throw Error("must not read in dry-run");} },
+    { async readJournal(){return {};}, async writeJournal(){} },
     { voteExecutor: executor, adminAddress: admin },
   );
-  assert.deepEqual(simulation, { address: executor, account: admin });
-  assert.equal(result[0].status, "simulated");
-  assert.equal(result[0].to, executor);
+  assert.equal(result.batches.length, 1);
+  assert.equal(result.batches[0].status, "simulated");
+  assert.equal(result.batches[0].transaction.to.toLowerCase(), executor.toLowerCase());
+  assert.equal(result.batches[0].simulation?.status, "success");
+  assert.equal(simulation?.to.toLowerCase(), executor.toLowerCase());
+  assert.equal(simulation?.account.toLowerCase(), admin.toLowerCase());
 });
 
 test("executor batch mode encodes one atomic voteMany call", async () => {
@@ -289,7 +336,7 @@ test("executor batch mode encodes one atomic voteMany call", async () => {
   const allocations = optimize(s, policy);
   const executor = addr(910);
   const admin = addr(911);
-  let simulation: { functionName: string; address: Address; account: Address } | undefined;
+  let simulation: { to: Address; account: Address } | undefined;
   const fake = {
     async getBlock() {
       return { number: 2n, timestamp: BigInt(s.timestamp) };
@@ -309,8 +356,9 @@ test("executor batch mode encodes one atomic voteMany call", async () => {
       if (args.functionName === "AERODROME_VOTER") return VOTER;
       return 0n;
     },
-    async simulateContract(args: { functionName: string; address: Address; account: Address }) {
-      simulation = args;
+    async call(args: { to: Address; account: Address }) {
+      simulation = { to: args.to, account: args.account };
+      return { data: "0x" };
     },
     async estimateContractGas() {
       return 200000n;
@@ -325,22 +373,165 @@ test("executor batch mode encodes one atomic voteMany call", async () => {
     allocations,
     policy,
     true,
-    { async readJournal(){return {};}, async writeJournal(){}, async adminAccount(){throw Error("must not read in dry-run");} },
+    { async readJournal(){return {};}, async writeJournal(){} },
     { voteExecutor: executor, adminAddress: admin, batchSize: 2 },
   );
-  assert.equal(result.length, 2);
-  assert.equal(simulation?.functionName, "voteMany");
-  assert.equal(simulation?.address.toLowerCase(), executor.toLowerCase());
+  assert.equal(result.batches.length, 1);
+  assert.deepEqual(result.batches[0].tokenIds, allocations.map((item) => item.tokenId));
+  assert.equal(result.batches[0].status, "simulated");
+  assert.equal(result.batches[0].transaction.to.toLowerCase(), executor.toLowerCase());
+  assert.equal(result.batches[0].simulation?.status, "success");
+  assert.equal(simulation?.to.toLowerCase(), executor.toLowerCase());
   assert.equal(simulation?.account.toLowerCase(), admin.toLowerCase());
-  assert.equal(result[0].status, "simulated");
-  assert.equal(result[0].data, result[1].data);
   assert.equal(
     decodeFunctionData({
       abi: VOTE_EXECUTOR_ABI,
-      data: result[0].data as `0x${string}`,
+      data: result.batches[0].transaction.data as `0x${string}`,
     }).functionName,
     "voteMany",
   );
+});
+
+test("executor dry-run signs locally and simulates without broadcasting", async () => {
+  const s = fixture();
+  s.timestamp = s.voteEnd - 3600;
+  const allocation = optimize(s, policy)[0];
+  const executor = addr(920);
+  const admin = privateKeyToAccount(`0x${"11".repeat(32)}` as Hex);
+  let contractSimulations = 0;
+  let ethCalls = 0;
+  let broadcasts = 0;
+  let journalWrites = 0;
+  const fake = {
+    async getBlock() {
+      return { number: 2n, timestamp: BigInt(s.timestamp) };
+    },
+    async multicall() {
+      return [allocation.owner, 0n, BigInt(allocation.power), 0].map((result) => ({
+        status: "success",
+        result,
+      }));
+    },
+    async readContract(args: { functionName: string }) {
+      if (args.functionName === "admin") return admin.address;
+      if (args.functionName === "AERODROME_VOTER") return VOTER;
+      return 0n;
+    },
+    async simulateContract() {
+      contractSimulations++;
+    },
+    async estimateContractGas() {
+      return 100000n;
+    },
+    async estimateFeesPerGas() {
+      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
+    },
+    async getTransactionCount() {
+      return 7;
+    },
+    async call(args: { account: Address; to: Address }) {
+      ethCalls++;
+      assert.equal(args.account.toLowerCase(), admin.address.toLowerCase());
+      assert.equal(args.to.toLowerCase(), executor.toLowerCase());
+      return { data: "0x" as Hex };
+    },
+    async sendRawTransaction() {
+      broadcasts++;
+    },
+  } as unknown as Parameters<typeof execute>[0];
+  const result = await execute(
+    fake,
+    s,
+    [allocation],
+    policy,
+    true,
+    {
+      async readJournal(){return {};},
+      async writeJournal(){journalWrites++;},
+      async adminAccount(){return admin;},
+    },
+    { voteExecutor: executor, adminAddress: admin.address },
+  );
+  assert.equal(contractSimulations, 0);
+  assert.equal(ethCalls, 1);
+  assert.equal(broadcasts, 0);
+  assert.equal(journalWrites, 0);
+  assert.equal(result.batches[0].status, "simulated");
+  assert.equal(result.batches[0].source, "executed");
+  assert.equal(result.batches[0].simulation?.status, "success");
+  assert.equal(result.batches[0].simulation?.returnData, "0x");
+  assert.match(String(result.batches[0].transaction.signedHash), /^0x[0-9a-f]{64}$/);
+});
+
+test("executor result contains the broadcast receipt", async () => {
+  const s = fixture();
+  s.timestamp = s.voteEnd - 3600;
+  const allocation = optimize(s, policy)[0];
+  const executor = addr(930);
+  const admin = privateKeyToAccount(`0x${"22".repeat(32)}` as Hex);
+  const transactionHash = `0x${"3".repeat(64)}` as Hex;
+  let broadcasts = 0;
+  let journalWrites = 0;
+  const fake = {
+    async getBlock() {
+      return { number: 2n, timestamp: BigInt(s.timestamp) };
+    },
+    async multicall() {
+      return [allocation.owner, 0n, BigInt(allocation.power), 0].map((result) => ({
+        status: "success",
+        result,
+      }));
+    },
+    async readContract(args: { functionName: string }) {
+      if (args.functionName === "admin") return admin.address;
+      if (args.functionName === "AERODROME_VOTER") return VOTER;
+      return 0n;
+    },
+    async estimateContractGas() {
+      return 100000n;
+    },
+    async estimateFeesPerGas() {
+      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
+    },
+    async getTransactionCount() {
+      return 7;
+    },
+    async sendRawTransaction() {
+      broadcasts++;
+    },
+    async waitForTransactionReceipt() {
+      return {
+        status: "success",
+        transactionHash,
+        blockNumber: 99n,
+        gasUsed: 80000n,
+        effectiveGasPrice: 3n,
+      };
+    },
+  } as unknown as Parameters<typeof execute>[0];
+  const result = await execute(
+    fake,
+    s,
+    [allocation],
+    policy,
+    false,
+    {
+      async readJournal(){return {};},
+      async writeJournal(){journalWrites++;},
+      async adminAccount(){return admin;},
+    },
+    { voteExecutor: executor, adminAddress: admin.address },
+  );
+  assert.equal(broadcasts, 1);
+  assert.equal(journalWrites, 2);
+  assert.deepEqual(result.batches[0].broadcast, {
+    status: "success",
+    transactionHash,
+    blockNumber: "99",
+    gasUsed: "80000",
+    effectiveGasPrice: "3",
+  });
+  assert.equal(result.batches[0].transaction.nonce, 7);
 });
 
 test("uncertain broadcasts block new signing and stale snapshots fail closed",async()=>{
