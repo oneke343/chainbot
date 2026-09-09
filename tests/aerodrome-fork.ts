@@ -2,7 +2,14 @@
 // Start: anvil --fork-url https://mainnet.base.org --chain-id 8453 --port 18545 --silent
 // Run: bun tests/aerodrome-fork.ts
 import assert from "node:assert/strict";
-import { createWalletClient, http, parseAbi, parseEther, type Hex } from "viem";
+import {
+  createWalletClient,
+  http,
+  parseAbi,
+  parseEther,
+  type Address,
+  type Hex,
+} from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import {
@@ -11,7 +18,7 @@ import {
   VOTER,
   clientFor,
   collect,
-  discover,
+  discoverNftsSugar,
   optimize,
   execute,
   DEFAULT_POLICY,
@@ -98,7 +105,7 @@ const epoch = await client.readContract({
   functionName: "epochStart",
   args: [block.timestamp],
 });
-const found = await discover(
+const found = await discoverNftsSugar(
   client,
   block.number!,
   [account.address],
@@ -147,12 +154,23 @@ console.log(`Fork: deployed VoteExecutor ${executorAddress} and approved both NF
 // is unnecessary; ownership/signing/votes below use actual fork contracts.
 const snapshot: Snapshot = process.argv[2]
   ? await Bun.file(process.argv[2]).json()
-  : await collect(clientFor("https://base-rpc.publicnode.com"), [
-      account.address,
-    ]);
+  : await (async () => {
+      const poolViewAddress = process.env.AERODROME_POOL_VIEW as
+        | Address
+        | undefined;
+      assert.ok(
+        poolViewAddress,
+        "Set AERODROME_POOL_VIEW or pass a snapshot file to aerodrome-fork",
+      );
+      return collect(
+        clientFor("https://base-rpc.publicnode.com"),
+        [account.address],
+        { poolViewAddress },
+      );
+    })();
 assert.equal(snapshot.epoch, Number(epoch));
 block = await client.getBlock();
-snapshot.nfts = await discover(
+snapshot.nfts = await discoverNftsSugar(
   client,
   block.number!,
   [account.address],
@@ -166,19 +184,19 @@ await local("evm_mine", []);
 block = await client.getBlock();
 snapshot.timestamp = Number(block.timestamp);
 snapshot.block = block.number!.toString();
-snapshot.nfts = await discover(
+snapshot.nfts = await discoverNftsSugar(
   client,
   block.number!,
   [account.address],
   snapshot.epoch,
 );
-const policy = { ...DEFAULT_POLICY, maxGasUsd: 20 };
+const policy = { ...DEFAULT_POLICY };
 const plans = optimize(snapshot, policy);
 assert.equal(plans.length, 2);
 await local("anvil_setIntervalMining", [1]);
 let journal: Journal = {};
 const deps = {
-  async relayerAccount() {
+  async adminAccount() {
     return account;
   },
   async readJournal() {
@@ -190,7 +208,7 @@ const deps = {
 };
 const executorConfig = {
   voteExecutor: executorAddress,
-  relayerAddress: account.address,
+  adminAddress: account.address,
 };
 const simulated = await execute(client, snapshot, plans, policy, true, deps, executorConfig);
 assert.ok(simulated.every((r) => r.status === "simulated"));

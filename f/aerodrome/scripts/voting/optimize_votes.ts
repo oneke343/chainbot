@@ -1,7 +1,6 @@
 import {
   DEFAULT_POLICY,
   optimizeDetailed,
-  validatePolicy,
   type Policy,
   type Snapshot,
 } from "../../lib/vote.ts";
@@ -19,7 +18,6 @@ export function main(
 ) {
   const started = Date.now();
   const policy = { ...DEFAULT_POLICY, ...options };
-  validatePolicy(policy);
   const result = optimizeDetailed(snapshot, policy);
   return {
     stage: "optimize",

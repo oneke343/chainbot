@@ -1,0 +1,11 @@
+summary: Shared RPC helpers
+description: Generic Base RPC client, Multicall reads, and bounded concurrency
+  helpers used by the Aerodrome voting stages. This is an internal library; use
+  the stage scripts instead of invoking it directly.
+lock: '!inline f/aerodrome/lib/rpc.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

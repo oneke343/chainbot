@@ -1,16 +1,28 @@
-summary: veAERO weekly voting window
-schedule: '0 */10 21,22 * * 3'
+summary: veAERO weekly vote at deadline
+schedule: '0 59 22 * * 3'
 timezone: UTC
 enabled: false
 script_path: f/aerodrome/auto_vote_optimizer
 is_flow: true
 no_flow_overlap: true
 args:
-  walletAddresses: []
+  rpcUrl: https://base-rpc.publicnode.com
+  rpcChunkSize: 1000
+  rpcConcurrency: 4
+  poolViewAddress: 0x67312BF2875db75aa6DE1aC62736E6ca93319EE7
+  poolViewPageSize: 100
+  walletAddresses: [
+    "0x8C6a48D94C435382219E37a98dce512D1DFB9163"
+  ]
   execution:
     dryRun: true
-    voteExecutor: ''
-    relayerAddress: ''
-    relayerVariablePath: ''
+    voteExecutor: 0xfaF332e8bb30C94D60C86d0aBE18C8a738549113
+    adminAddress: 0x0726E18cFddC478CA3D8d1d71cd01f3852a1A801
+    adminVariablePath: ''
     executorBatchSize: 16
-  options: {}
+  options:
+    dilution: 1
+    maxShare: 1
+    rewardHaircut: 0.01
+    candidateMinVotes: 500
+    candidateMinRewardPerVoteUsd: 0.0005

@@ -1,7 +1,5 @@
 // Pinned dependencies; Bun runtime is needed for local account signing.
 import {
-  createPublicClient,
-  http,
   parseAbi,
   formatUnits,
   encodeFunctionData,
@@ -13,64 +11,65 @@ import {
   type LocalAccount,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { base } from "viem/chains";
 import * as wmill from "windmill-client";
+import {
+  assert,
+  call,
+  mapWithConcurrency,
+  many as rpcMany,
+  type PublicClient,
+  type ReadConfig,
+  type Call,
+} from "./rpc.ts";
+export { clientFor, mapWithConcurrency } from "./rpc.ts";
+export type { PublicClient, ReadConfig } from "./rpc.ts";
+import {
+  readVeNfts,
+  validateSugar,
+} from "./sugar.ts";
+import { readPoolView } from "./pool_view.ts";
 
 export const VOTER = "0x16613524e02ad97eDfeF371bC883F2F5d6C480A5" as Address;
 export const VE = "0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4" as Address;
-export const WETH = "0x4200000000000000000000000000000000000006" as Address;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const WEEK = 604800;
 export const DEFAULT_EXECUTOR_BATCH_SIZE = 16;
 export const ABI = parseAbi([
   "function ve() view returns (address)",
   "function voter() view returns (address)",
-  "function balanceOf(address) view returns (uint256)",
-  "function ownerToNFTokenIdList(address,uint256) view returns (uint256)",
   "function ownerOf(uint256) view returns (address)",
   "function balanceOfNFT(uint256) view returns (uint256)",
-  "function escrowType(uint256) view returns (uint8)",
-  "function idToManaged(uint256) view returns (uint256)",
-  "function locked(uint256) view returns (int128 amount,uint256 end,bool isPermanent)",
   "function lastVoted(uint256) view returns (uint256)",
-  "function usedWeights(uint256) view returns (uint256)",
-  "function poolVote(uint256,uint256) view returns (address)",
-  "function votes(uint256,address) view returns (uint256)",
   "function epochStart(uint256) view returns (uint256)",
   "function epochVoteStart(uint256) view returns (uint256)",
   "function epochVoteEnd(uint256) view returns (uint256)",
   "function maxVotingNum() view returns (uint256)",
-  "function length() view returns (uint256)",
-  "function pools(uint256) view returns (address)",
-  "function gauges(address) view returns (address)",
-  "function isAlive(address) view returns (bool)",
-  "function weights(address) view returns (uint256)",
-  "function gaugeToFees(address) view returns (address)",
-  "function gaugeToBribe(address) view returns (address)",
-  "function rewardsListLength() view returns (uint256)",
-  "function rewards(uint256) view returns (address)",
-  "function tokenRewardsPerEpoch(address,uint256) view returns (uint256)",
-  "function decimals() view returns (uint8)",
+  "function votes(uint256,address) view returns (uint256)",
 ]);
-// The relayer can call only the executor's atomic batch entrypoint. The
+function many(
+  client: PublicClient,
+  block: bigint,
+  calls: Call[],
+  optional = false,
+  config?: ReadConfig,
+) {
+  return rpcMany(client, block, calls, ABI, optional, config);
+}
+// The admin can call only the executor's atomic batch entrypoint. The
 // executor itself forwards each item to the immutable Aerodrome Voter.
 export const VOTE_EXECUTOR_ABI = parseAbi([
   "function voteMany(uint256[],address[][],uint256[][])",
-  "function relayer() view returns (address)",
+  "function admin() view returns (address)",
+  "function transferAdmin(address)",
+  "function recoverERC20(address,address,uint256)",
+  "function recoverETH(address,uint256)",
   "function AERODROME_VOTER() view returns (address)",
 ]);
-type Call = {
-  address: Address;
-  functionName: string;
-  args?: readonly unknown[];
-};
-type PublicClient = ReturnType<typeof clientFor>;
 export type Nft = {
   tokenId: string;
   owner: Address;
   power: string;
   lastVoted: number;
-  escrowType: number;
   managedId: string;
   permanent: boolean;
   current: Record<string, string>;
@@ -98,11 +97,45 @@ export type Snapshot = {
   maxPools: number;
   nfts: Nft[];
   pools: Pool[];
-  ethUsd: number;
   unpriced: string[];
   registeredPools: number;
   activePools: number;
 };
+export type ExecutionSnapshot = Pick<
+  Snapshot,
+  "block" | "timestamp" | "epoch" | "voteStart" | "voteEnd"
+>;
+export type CollectTimings = {
+  deploymentValidationMs: number;
+  sugarValidationMs: number;
+  nftDiscoveryMs: number;
+  poolDiscoveryMs: number;
+  steps: CollectStepTimings;
+};
+export type CollectStepTimings = {
+  sugarNftMs: number;
+  sugarPoolMs: number;
+  rewardPricesMs: number;
+};
+function emptyCollectStepTimings(): CollectStepTimings {
+  return {
+    sugarNftMs: 0,
+    sugarPoolMs: 0,
+    rewardPricesMs: 0,
+  };
+}
+function addTiming(
+  timings: CollectStepTimings | undefined,
+  key: keyof CollectStepTimings,
+  elapsedMs: number,
+) {
+  if (timings) timings[key] += elapsedMs;
+}
+export type CollectResult = {
+  snapshot: Snapshot;
+  timings: CollectTimings;
+};
+
 export type Allocation = {
   tokenId: string;
   owner: Address;
@@ -112,45 +145,21 @@ export type Allocation = {
   estimatedRewardUsd: number;
 };
 export type Policy = {
-  maxPools: number;
   dilution: number;
   maxShare: number;
   rewardHaircut: number;
-  candidateMinRewardUsd: number;
+  candidateMinVotes: number;
   candidateMinRewardPerVoteUsd: number;
-  candidateMinExpectedGainUsd: number;
-  candidatePoolLimit: number;
-  maxGasUsd: number;
-  minNetUsd: number;
-  executionLeadSeconds: number;
-  deadlineBufferSeconds: number;
   maxSnapshotAgeSeconds: number;
 };
 export const DEFAULT_POLICY: Policy = {
-  maxPools: 10,
   dilution: 1.15,
   maxShare: 1,
   rewardHaircut: 0.1,
-  candidateMinRewardUsd: 0,
+  candidateMinVotes: 0,
   candidateMinRewardPerVoteUsd: 0,
-  candidateMinExpectedGainUsd: 0,
-  candidatePoolLimit: 0,
-  maxGasUsd: 2,
-  minNetUsd: 0,
-  executionLeadSeconds: 7200,
-  deadlineBufferSeconds: 600,
   maxSnapshotAgeSeconds: 900,
 };
-function assert(ok: unknown, message: string): asserts ok {
-  if (!ok) throw new Error(message);
-}
-function count(n: bigint, limit: number, label: string) {
-  assert(
-    n >= 0n && n <= BigInt(limit),
-    `${label} exceeds supported limit ${limit}; refusing partial discovery`,
-  );
-  return Number(n);
-}
 function units(n: string | bigint) {
   return Number(formatUnits(BigInt(n), 18));
 }
@@ -158,281 +167,62 @@ export function validatePolicy(p: Policy) {
   for (const [key, value] of Object.entries(p))
     assert(Number.isFinite(value), `Invalid policy ${key}`);
   assert(
-    Number.isInteger(p.maxPools) && p.maxPools > 0 && p.maxPools <= 30,
-    "maxPools must be 1..30",
-  );
-  assert(
     p.dilution >= 1 && p.dilution <= 10 && p.maxShare > 0 && p.maxShare <= 1,
     "Invalid dilution/maxShare",
   );
   assert(
     p.rewardHaircut >= 0 &&
       p.rewardHaircut < 1 &&
-      p.candidateMinRewardUsd >= 0 &&
+      p.candidateMinVotes >= 0 &&
       p.candidateMinRewardPerVoteUsd >= 0 &&
-      p.candidateMinExpectedGainUsd >= 0 &&
-      Number.isInteger(p.candidatePoolLimit) &&
-      p.candidatePoolLimit >= 0 &&
-      p.maxGasUsd > 0 &&
-      p.minNetUsd >= 0,
+      Number.isFinite(p.candidateMinVotes),
     "Invalid cost policy",
-  );
-  assert(
-    p.deadlineBufferSeconds >= 60 &&
-      p.executionLeadSeconds > p.deadlineBufferSeconds &&
-      p.executionLeadSeconds < WEEK,
-    "Invalid execution window",
   );
   assert(
     p.maxSnapshotAgeSeconds > 0 && p.maxSnapshotAgeSeconds <= 3600,
     "Invalid snapshot age",
   );
 }
-export function clientFor(rpcUrl: string) {
-  assert(/^https?:\/\//.test(rpcUrl), "Invalid RPC URL");
-  return createPublicClient({
-    chain: base,
-    transport: http(rpcUrl, { timeout: 30000, retryCount: 2 }),
-  });
-}
-
-export type ReadConfig = {
-  rpcChunkSize?: number;
-  rpcConcurrency?: number;
-};
-const DEFAULT_READ_CONFIG = {
-  rpcChunkSize: 1000,
-  rpcConcurrency: 4,
-} as const;
-function readConfig(config?: ReadConfig) {
-  const chunkSize = config?.rpcChunkSize ?? DEFAULT_READ_CONFIG.rpcChunkSize;
-  const concurrency = config?.rpcConcurrency ?? DEFAULT_READ_CONFIG.rpcConcurrency;
-  assert(
-    Number.isInteger(chunkSize) && chunkSize >= 100 && chunkSize <= 1000,
-    "rpcChunkSize must be an integer from 100 to 1000",
-  );
-  assert(
-    Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 8,
-    "rpcConcurrency must be an integer from 1 to 8",
-  );
-  return { rpcChunkSize: chunkSize, rpcConcurrency: concurrency };
-}
-
-/**
- * Split work into chunks and process those chunks with bounded concurrency.
- * A worker claims the next chunk synchronously before awaiting, so at most
- * `concurrency` mapper calls are in flight. Flattening chunk results in chunk
- * order preserves the input order when the mapper returns one result per item.
- */
-export async function mapChunksWithConcurrency<T, R>(
-  items: readonly T[],
-  chunkSize: number,
-  concurrency: number,
-  mapper: (chunk: readonly T[], chunkIndex: number) => Promise<readonly R[]>,
-): Promise<R[]> {
-  assert(Number.isInteger(chunkSize) && chunkSize >= 1, "Invalid chunk size");
-  assert(Number.isInteger(concurrency) && concurrency >= 1, "Invalid concurrency");
-  if (!items.length) return [];
-  const chunks = Array.from(
-    { length: Math.ceil(items.length / chunkSize) },
-    (_, index) => items.slice(index * chunkSize, (index + 1) * chunkSize),
-  );
-  const chunkResults = new Array<readonly R[]>(chunks.length);
-  let next = 0;
-  async function worker() {
-    while (true) {
-      const chunkIndex = next++;
-      if (chunkIndex >= chunks.length) return;
-      chunkResults[chunkIndex] = await mapper(chunks[chunkIndex], chunkIndex);
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, chunks.length) }, () => worker()),
-  );
-  return chunkResults.flatMap((results) => results);
-}
-
-// Fixed-block Multicall3 reads; failed required calls never turn into zeroes.
-// Chunking and concurrency are delegated to the generic scheduler above, so
-// this function stays focused on RPC semantics and failure handling.
-async function many(
-  client: PublicClient,
-  block: bigint,
-  calls: Call[],
-  optional = false,
-  config?: ReadConfig,
-): Promise<any[]> {
-  if (!calls.length) return [];
-  const { rpcChunkSize, rpcConcurrency } = readConfig(config);
-  const entries = await mapChunksWithConcurrency(
-    calls,
-    rpcChunkSize,
-    rpcConcurrency,
-    async (part) => {
-      const results = await client.multicall({
-        blockNumber: block,
-        allowFailure: true,
-        batchSize: 0,
-        authorizationList: undefined,
-        contracts: part.map((c) => ({ ...c, abi: ABI })) as any,
-      });
-      return results.map((result, index) => ({
-        result,
-        request: part[index],
-      }));
-    },
-  );
-  const out: any[] = new Array(calls.length);
-  entries.forEach(({ result, request }, index) => {
-    if (result.status === "failure") {
-      assert(
-        optional,
-        `Contract read failed: ${request.address} ${request.functionName}`,
-      );
-      out[index] = null;
-    } else out[index] = result.result;
-  });
-  return out;
-}
-function call(
-  address: Address,
-  functionName: string,
-  ...args: unknown[]
-): Call {
-  return { address, functionName, args };
-}
-async function readNft(
-  client: PublicClient,
-  block: bigint,
-  id: bigint,
-  owners: Address[],
-  epoch: number,
-  config?: ReadConfig,
-): Promise<Nft> {
-  const [owner, power, kind, managed, lock, last, used] = await many(
-    client,
-    block,
-    [
-      call(VE, "ownerOf", id),
-      call(VE, "balanceOfNFT", id),
-      call(VE, "escrowType", id),
-      call(VE, "idToManaged", id),
-      call(VE, "locked", id),
-      call(VOTER, "lastVoted", id),
-      call(VOTER, "usedWeights", id),
-    ],
-    false,
-    config,
-  );
-  assert(
-    owners.some((o) => o.toLowerCase() === owner.toLowerCase()),
-    "NFT owner changed during enumeration",
-  );
-  const current: Record<string, string> = {};
-  if (used > 0n) {
-    let sum = 0n;
-    for (let i = 0; i < 1024 && sum < used; i += 32) {
-      const addresses = await many(
-        client,
-        block,
-        Array.from({ length: 32 }, (_, j) =>
-          call(VOTER, "poolVote", id, BigInt(i + j)),
-        ),
-        true,
-        config,
-      );
-      const valid = addresses.filter((a): a is Address => a !== null);
-      assert(valid.length > 0, "Incomplete prior vote enumeration");
-      const weights: bigint[] = await many(
-        client,
-        block,
-        valid.map((p) => call(VOTER, "votes", id, p)),
-        false,
-        config,
-      );
-      valid.forEach((p, j) => {
-        assert(!(p.toLowerCase() in current), "Duplicate prior pool");
-        current[p.toLowerCase()] = weights[j].toString();
-        sum += weights[j];
-      });
-    }
-    assert(sum === used, "Prior votes do not match usedWeights");
-  }
-  const reason =
-    Number(kind) !== 0
-      ? "managed_or_relay"
-      : power === 0n
-        ? "zero_power"
-        : Number(last) >= epoch
-          ? "already_voted"
-          : undefined;
-  return {
-    tokenId: id.toString(),
-    owner,
-    power: power.toString(),
-    lastVoted: Number(last),
-    escrowType: Number(kind),
-    managedId: managed.toString(),
-    permanent: lock[2],
-    current,
-    eligible: !reason,
-    reason,
-  };
-}
-
-/** Discover direct veAERO ownership, NFT state, and movable prior votes. */
-export async function discoverNfts(
-  client: PublicClient,
-  block: bigint,
-  owners: Address[],
-  epoch: number,
-  config?: ReadConfig,
-): Promise<Nft[]> {
-  const counts = await many(
-    client,
-    block,
-    owners.map((o) => call(VE, "balanceOf", o)),
-    false,
-    config,
-  );
-  const queries = owners.flatMap((o, i) =>
-    Array.from({ length: count(counts[i], 1000, "NFT count") }, (_, j) =>
-      call(VE, "ownerToNFTokenIdList", o, BigInt(j)),
-    ),
-  );
-  const ids: bigint[] = await many(client, block, queries, false, config);
-  assert(
-    new Set(ids.map(String)).size === ids.length,
-    "Duplicate NFT enumeration",
-  );
-  const { rpcConcurrency } = readConfig(config);
-  return mapChunksWithConcurrency(ids, 1, rpcConcurrency, async (chunk) => [
-    await readNft(client, block, chunk[0], owners, epoch, config),
-  ]);
-}
-
-// Backward-compatible name for callers that only need NFT discovery.
-export const discover = discoverNfts;
 type Price = { price: number; timestamp: number; confidence?: number };
+// CoinLlama accepts a bounded list per request. Fetch those lists in parallel
+// so latency is approximately the slowest batch instead of their sum.
+const PRICE_BATCH_SIZE = 100;
+const PRICE_BATCH_CONCURRENCY = 4;
+
 export async function prices(
   tokens: Address[],
   now: number,
+  concurrency = PRICE_BATCH_CONCURRENCY,
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>();
-  for (let i = 0; i < tokens.length; i += 40) {
-    const keys = tokens.slice(i, i + 40).map((t) => `base:${t.toLowerCase()}`);
-    const response = await fetch(
-      `https://coins.llama.fi/prices/current/${keys.join(",")}`,
-      { signal: AbortSignal.timeout(30000) },
-    );
-    assert(response.ok, "Price service unavailable");
-    const body = (await response.json()) as { coins: Record<string, Price> };
-    assert(
-      body.coins && typeof body.coins === "object",
-      "Invalid price response",
-    );
+  const batches = Array.from(
+    { length: Math.ceil(tokens.length / PRICE_BATCH_SIZE) },
+    (_, index) => tokens.slice(
+      index * PRICE_BATCH_SIZE,
+      (index + 1) * PRICE_BATCH_SIZE,
+    ),
+  );
+  const responses = await mapWithConcurrency(
+    batches,
+    concurrency,
+    async (batch) => {
+      const keys = batch.map((t) => `base:${t.toLowerCase()}`);
+      const response = await fetch(
+        `https://coins.llama.fi/prices/current/${keys.join(",")}`,
+        { signal: AbortSignal.timeout(30000) },
+      );
+      assert(response.ok, "Price service unavailable");
+      const body = (await response.json()) as { coins: Record<string, Price> };
+      assert(
+        body.coins && typeof body.coins === "object",
+        "Invalid price response",
+      );
+      return { keys, coins: body.coins };
+    },
+  );
+  for (const { keys, coins } of responses) {
     for (const key of keys) {
-      const p = body.coins[key];
+      const p = coins[key];
       if (
         p &&
         Number.isFinite(p.price) &&
@@ -446,162 +236,159 @@ export async function prices(
   return map;
 }
 
-export type PoolDiscovery = {
-  pools: Pool[];
-  ethUsd: number;
-  unpriced: string[];
-  registeredPools: number;
-  activePools: number;
+type RewardEntry = {
+  pool: number;
+  source: string;
+  token: Address;
+  amount: bigint;
+  decimals: number | null;
 };
 
-/** Discover live gauges, reward contracts, reward amounts, and valuations. */
-export async function discoverPools(
-  client: PublicClient,
-  block: bigint,
+/** Convert Sugar reward rows to the Snapshot reward representation. */
+async function valueRewards(
   timestamp: bigint,
-  epoch: bigint,
-  poolCount: bigint,
-  config?: ReadConfig,
-): Promise<PoolDiscovery> {
-  const addresses: Address[] = await many(
-    client,
-    block,
-    Array.from({ length: count(poolCount, 50000, "Pool count") }, (_, i) =>
-      call(VOTER, "pools", BigInt(i)),
-    ),
-    false,
-    config,
-  );
-  const gauges: Address[] = await many(
-    client,
-    block,
-    addresses.map((p) => call(VOTER, "gauges", p)),
-    false,
-    config,
-  );
-  const alive: boolean[] = await many(
-    client,
-    block,
-    gauges.map((g) => call(VOTER, "isAlive", g)),
-    false,
-    config,
-  );
-  const active = addresses
-    .map((p, i) => ({ address: p, gauge: gauges[i] }))
-    .filter((_, i) => alive[i]);
-  console.info(
-    `Aerodrome snapshot: ${addresses.length} registered pools, ${active.length} active gauges`,
-  );
-  const details = await many(
-    client,
-    block,
-    active.flatMap((p) => [
-      call(VOTER, "weights", p.address),
-      call(VOTER, "gaugeToFees", p.gauge),
-      call(VOTER, "gaugeToBribe", p.gauge),
-    ]),
-    false,
-    config,
-  );
-  const pools: Pool[] = active.map((p, i) => ({
-    ...p,
-    votes: details[i * 3].toString(),
-    rewardUsd: 0,
-    rewards: [],
-  }));
-  const rewardContracts = active.flatMap((_, i) => [
-    { address: details[i * 3 + 1] as Address, pool: i, source: "fees" },
-    { address: details[i * 3 + 2] as Address, pool: i, source: "incentives" },
-  ]);
-  const lengths: bigint[] = await many(
-    client,
-    block,
-    rewardContracts.map((r) => call(r.address, "rewardsListLength")),
-    false,
-    config,
-  );
-  const entries = rewardContracts.flatMap((r, i) =>
-    Array.from(
-      { length: count(lengths[i], 1000, "Reward token count") },
-      (_, j) => ({ ...r, index: j }),
-    ),
-  );
-  const tokens: Address[] = await many(
-    client,
-    block,
-    entries.map((e) => call(e.address, "rewards", BigInt(e.index))),
-    false,
-    config,
-  );
-  const amounts: bigint[] = await many(
-    client,
-    block,
-    entries.map((e, i) =>
-      call(e.address, "tokenRewardsPerEpoch", tokens[i], epoch),
-    ),
-    false,
-    config,
-  );
+  pools: Pool[],
+  entries: RewardEntry[],
+  timings?: CollectStepTimings,
+) {
   const unique = [
     ...new Set(
-      tokens
-        .filter((_, i) => amounts[i] > 0n)
-        .map((t) => t.toLowerCase())
-        .concat(WETH.toLowerCase()),
+      entries
+        .filter((e) => e.amount > 0n)
+        .map((e) => e.token.toLowerCase()),
     ),
   ] as Address[];
+  const phaseStarted = Date.now();
   const priceMap = await prices(unique, Number(timestamp));
-  assert(
-    priceMap.has(WETH.toLowerCase()),
-    "Fresh WETH/USD price is required for gas limits",
-  );
-  const decimals = await many(
-    client,
-    block,
-    unique.map((t) => call(t, "decimals")),
-    true,
-    config,
-  );
-  const decimalMap = new Map(unique.map((t, i) => [t, decimals[i]]));
-  entries.forEach((e, i) => {
-    if (amounts[i] === 0n) return;
-    const token = tokens[i].toLowerCase() as Address,
+  addTiming(timings, "rewardPricesMs", Date.now() - phaseStarted);
+  entries.forEach((e) => {
+    if (e.amount === 0n) return;
+    const token = e.token.toLowerCase() as Address,
       price = priceMap.get(token),
-      dec = decimalMap.get(token);
+      dec = e.decimals;
     const usd =
       price !== undefined && Number.isInteger(dec) && dec >= 0 && dec <= 36
-        ? Number(formatUnits(amounts[i], dec)) * price
+        ? Number(formatUnits(e.amount, dec)) * price
         : null;
     assert(usd === null || Number.isFinite(usd), "Invalid reward valuation");
     pools[e.pool].rewards.push({
       token,
-      amount: amounts[i].toString(),
+      amount: e.amount.toString(),
       source: e.source,
       usd,
     });
     if (usd !== null) pools[e.pool].rewardUsd += usd;
   });
-  const unpriced = [
-    ...new Set(
-      pools.flatMap((p) =>
-        p.rewards.filter((r) => r.usd === null).map((r) => r.token),
-      ),
-    ),
-  ];
   return {
-    pools,
-    ethUsd: priceMap.get(WETH.toLowerCase())!,
-    unpriced,
-    registeredPools: addresses.length,
-    activePools: active.length,
+    unpriced: [
+      ...new Set(
+        pools.flatMap((p) =>
+          p.rewards.filter((r) => r.usd === null).map((r) => r.token),
+        ),
+      ),
+    ],
   };
 }
 
-export async function collect(
+export type PoolDiscovery = {
+  pools: Pool[];
+  unpriced: string[];
+  registeredPools: number;
+  activePools: number;
+};
+
+/** Convert VeSugar rows to the business NFT model. */
+export async function discoverNftsSugar(
+  client: PublicClient,
+  block: bigint,
+  owners: Address[],
+  epoch: number,
+  config?: ReadConfig,
+  timings?: CollectStepTimings,
+): Promise<Nft[]> {
+  const started = Date.now();
+  const raw = await readVeNfts(client, block, owners, config);
+  addTiming(timings, "sugarNftMs", Date.now() - started);
+  return raw.map((nft) => {
+    const current: Record<string, string> = {};
+    for (const vote of nft.votes ?? []) current[vote.lp.toLowerCase()] = vote.weight.toString();
+    const reason =
+      nft.voting_amount === 0n
+        ? "zero_power"
+        : Number(nft.voted_at) >= epoch
+          ? "already_voted"
+          : undefined;
+    return {
+      tokenId: nft.id.toString(),
+      owner: nft.account,
+      power: nft.voting_amount.toString(),
+      lastVoted: Number(nft.voted_at),
+      managedId: nft.managed_id.toString(),
+      permanent: nft.permanent,
+      current,
+      eligible: !reason,
+      reason,
+    };
+  });
+}
+
+/** Discover active pools, rewards, and decimals through the view contract. */
+export async function discoverPools(
+  client: PublicClient,
+  block: bigint,
+  timestamp: bigint,
+  epoch: bigint,
+  config: ReadConfig,
+  timings?: CollectStepTimings,
+): Promise<PoolDiscovery> {
+  assert(config.poolViewAddress, "poolViewAddress is required");
+  const poolStarted = Date.now();
+  const view = await readPoolView(
+    client,
+    block,
+    epoch,
+    config.poolViewAddress,
+    config,
+  );
+  addTiming(timings, "sugarPoolMs", Date.now() - poolStarted);
+  const pools: Pool[] = view.pools.map((pool) => ({
+    address: pool.pool,
+    gauge: pool.gauge,
+    votes: pool.votes.toString(),
+    rewardUsd: 0,
+    rewards: [],
+  }));
+  const rewardEntries: RewardEntry[] = view.pools.flatMap((pool, index) =>
+    pool.rewards.map((reward) => ({
+      pool: index,
+      source: reward.source === 0 ? "fees" : "incentives",
+      token: reward.token,
+      amount: reward.amount,
+      decimals: reward.decimalsValid ? Number(reward.decimals) : null,
+    })),
+  );
+  const valued = await valueRewards(
+    timestamp,
+    pools,
+    rewardEntries,
+    timings,
+  );
+  return {
+    pools,
+    unpriced: valued.unpriced,
+    registeredPools: view.registeredPools,
+    activePools: pools.length,
+  };
+}
+
+export async function collectDetailed(
   client: PublicClient,
   walletAddresses: string[],
   config?: ReadConfig,
-): Promise<Snapshot> {
+): Promise<CollectResult> {
+  const started = Date.now();
+  const stepTimings = emptyCollectStepTimings();
+  assert(config?.poolViewAddress, "poolViewAddress is required");
   assert(
     walletAddresses.length > 0 && walletAddresses.length <= 50,
     "Provide 1..50 wallet addresses",
@@ -613,10 +400,10 @@ export async function collect(
   const owners = [...new Set(walletAddresses.map((a) => a.toLowerCase()))].map(
     (a) => getAddress(a),
   );
-  assert((await client.getChainId()) === 8453, "RPC must be Base (8453)");
+  assert(!client.chain || client.chain.id === 8453, "RPC must be Base (8453)");
   const block = await client.getBlock({ blockTag: "latest" });
   assert(block.number !== null, "Missing block number");
-  const [ve, voter, epoch, start, end, maxPools, n] = await many(
+  const [ve, voter, epoch, start, end, maxPools] = await many(
     client,
     block.number,
     [
@@ -626,30 +413,52 @@ export async function collect(
       call(VOTER, "epochVoteStart", block.timestamp),
       call(VOTER, "epochVoteEnd", block.timestamp),
       call(VOTER, "maxVotingNum"),
-      call(VOTER, "length"),
     ],
     false,
     config,
   );
+  const deploymentValidationMs = Date.now() - started;
   assert(
     ve.toLowerCase() === VE.toLowerCase() &&
       voter.toLowerCase() === VOTER.toLowerCase(),
     "Aerodrome deployment mismatch",
   );
+  const sugarStarted = Date.now();
+  await validateSugar(client, block.number, VOTER, VE);
+  const sugarValidationMs = Date.now() - sugarStarted;
   // Both branches use the same fixed block but do not depend on each other's
   // results, so run them in parallel after deployment validation.
+  let nftDiscoveryMs = 0;
+  let poolDiscoveryMs = 0;
   const [nfts, poolDiscovery] = await Promise.all([
-    discoverNfts(client, block.number, owners, Number(epoch), config),
-    discoverPools(
-      client,
-      block.number,
-      block.timestamp,
-      epoch,
-      n,
-      config,
-    ),
+    (async () => {
+      const phaseStarted = Date.now();
+      const result = await discoverNftsSugar(
+        client,
+        block.number,
+        owners,
+        Number(epoch),
+        config,
+        stepTimings,
+      );
+      nftDiscoveryMs = Date.now() - phaseStarted;
+      return result;
+    })(),
+    (async () => {
+      const phaseStarted = Date.now();
+      const result = await discoverPools(
+        client,
+        block.number,
+        block.timestamp,
+        epoch,
+        config,
+        stepTimings,
+      );
+      poolDiscoveryMs = Date.now() - phaseStarted;
+      return result;
+    })(),
   ]);
-  return {
+  const snapshot: Snapshot = {
     block: block.number.toString(),
     timestamp: Number(block.timestamp),
     epoch: Number(epoch),
@@ -659,6 +468,24 @@ export async function collect(
     nfts,
     ...poolDiscovery,
   };
+  return {
+    snapshot,
+    timings: {
+      deploymentValidationMs,
+      sugarValidationMs,
+      nftDiscoveryMs,
+      poolDiscoveryMs,
+      steps: stepTimings,
+    },
+  };
+}
+
+export async function collect(
+  client: PublicClient,
+  walletAddresses: string[],
+  config?: ReadConfig,
+): Promise<Snapshot> {
+  return (await collectDetailed(client, walletAddresses, config)).snapshot;
 }
 
 type Candidate = {
@@ -666,6 +493,7 @@ type Candidate = {
   r: number;
   b: number;
   f: number;
+  competitionVotes: number;
   density: number;
   maxGain: number;
 };
@@ -685,10 +513,16 @@ function prepareCandidates(
   policy: Policy,
   total: number,
 ): { candidates: Candidate[]; valuedPools: number } {
-  // Build one candidate per valued, live pool. `b` is external voting power
-  // (all local NFT votes are removed first), while `f` is local power that the
-  // current run cannot move. `maxGain` is an upper bound used only for safe
-  // pre-filtering/ranking; the exact allocation is solved below.
+  // Build one candidate per valued, live pool. `b` is risk-adjusted external
+  // voting power (all local NFT votes are removed first), while `f` is local
+  // power that the current run cannot move. `competitionVotes` deliberately
+  // uses unadjusted external votes plus fixed votes: it is the pool size used
+  // by the noise filter, while `density` uses the risk-adjusted denominator
+  // used by the optimizer.
+  //
+  // `maxGain` is an optimistic standalone gain for up to `cap` new votes. It
+  // remains useful for fallback ordering and combinatorial search, but is not
+  // exposed as a candidate threshold because it is not the final allocation.
   const valued = snapshot.pools
     .filter((p) => p.rewardUsd > 0)
     .map((p) => {
@@ -703,8 +537,9 @@ function prepareCandidates(
           0n,
         );
       assert(BigInt(p.votes) >= all, "Pool votes smaller than owned votes");
+      const external = units(BigInt(p.votes) - all);
       const r = p.rewardUsd * (1 - policy.rewardHaircut);
-      const b = Math.max(1e-18, units(BigInt(p.votes) - all) * policy.dilution);
+      const b = Math.max(1e-18, external * policy.dilution);
       const f = units(fixed);
       const cap = Math.min(total * policy.maxShare, total);
       const maxGain =
@@ -714,6 +549,7 @@ function prepareCandidates(
         r,
         b,
         f,
+        competitionVotes: external + f,
         density: r / Math.max(b + f, 1e-18),
         maxGain,
       };
@@ -721,10 +557,19 @@ function prepareCandidates(
   if (!valued.length) return { candidates: [], valuedPools: 0 };
 
   const minimum = Math.ceil(1 / policy.maxShare - 1e-10);
-  const passes = (c: Candidate) =>
-    c.p.rewardUsd >= policy.candidateMinRewardUsd &&
-    c.density >= policy.candidateMinRewardPerVoteUsd &&
-    c.maxGain >= policy.candidateMinExpectedGainUsd;
+  const passes = (c: Candidate) => {
+    // This is an AND for removal, not an AND for admission. A low-vote pool
+    // with unusually good reward density is often exactly the pool worth
+    // voting for, so remove only pools that are both small and unattractive
+    // on a per-vote basis.
+    const lowVotes =
+      policy.candidateMinVotes > 0 &&
+      c.competitionVotes < policy.candidateMinVotes;
+    const lowDensity =
+      policy.candidateMinRewardPerVoteUsd > 0 &&
+      c.density < policy.candidateMinRewardPerVoteUsd;
+    return !(lowVotes && lowDensity);
+  };
   let candidates = valued.filter(passes);
 
   // Thresholds are allowed to be strict, but never leave maxShare infeasible.
@@ -737,12 +582,6 @@ function prepareCandidates(
     candidates = [...candidates, ...fallback.slice(0, minimum - candidates.length)];
   }
 
-  if (policy.candidatePoolLimit > 0 && candidates.length > policy.candidatePoolLimit) {
-    const limit = Math.max(minimum, policy.candidatePoolLimit);
-    candidates = candidates
-      .sort((a, b) => b.maxGain - a.maxGain || b.r - a.r)
-      .slice(0, limit);
-  }
   return { candidates, valuedPools: valued.length };
 }
 
@@ -773,7 +612,11 @@ export function optimizeDetailed(
     estimatedRewardUsd: 0,
   });
   if (power === 0n) return { allocations: [], metrics: emptyMetrics() };
-  const k = Math.min(policy.maxPools, snapshot.maxPools);
+  assert(
+    Number.isInteger(snapshot.maxPools) && snapshot.maxPools > 0,
+    "Snapshot maxVotingNum must be a positive integer",
+  );
+  const k = snapshot.maxPools;
   const prepared = prepareCandidates(snapshot, policy, total),
     candidates = prepared.candidates;
   if (candidates.length === 0)
@@ -903,17 +746,8 @@ export function optimize(snapshot: Snapshot, policy: Policy): Allocation[] {
   return optimizeDetailed(snapshot, policy).allocations;
 }
 
-export function executionWindow(
-  timestamp: number,
-  snapshot: Snapshot,
-  policy: Policy,
-) {
-  return (
-    timestamp > snapshot.voteStart &&
-    timestamp >= snapshot.voteEnd - policy.executionLeadSeconds &&
-    timestamp < snapshot.voteEnd - policy.deadlineBufferSeconds &&
-    Math.floor(timestamp / WEEK) * WEEK === snapshot.epoch
-  );
+export function withinVotingWindow(timestamp: number, snapshot: Snapshot) {
+  return timestamp > snapshot.voteStart && timestamp < snapshot.voteEnd;
 }
 type JournalEntry = {
   hash: Hex;
@@ -926,18 +760,18 @@ type JournalEntry = {
 };
 export type Journal = Record<string, JournalEntry>;
 export type ExecutionDeps = {
-  relayerAccount(): Promise<LocalAccount>;
+  adminAccount(): Promise<LocalAccount>;
   readJournal(): Promise<Journal>;
   writeJournal(journal: Journal): Promise<void>;
 };
 export type VoteExecutorConfig = {
   voteExecutor: Address;
-  relayerAddress: Address;
+  adminAddress: Address;
   /** Maximum NFTs included in one VoteExecutor.voteMany transaction. */
   batchSize?: number;
 };
 export function makeExecutionDeps(
-  relayerVariablePath: string,
+  adminVariablePath: string,
 ): ExecutionDeps {
   async function accountFromVariable(path: string | undefined, label: string) {
     assert(path && /^[uf]\//.test(path), `Missing ${label} secret variable path`);
@@ -958,8 +792,8 @@ export function makeExecutionDeps(
     }
   }
   return {
-    async relayerAccount() {
-      return accountFromVariable(relayerVariablePath, "relayer");
+    async adminAccount() {
+      return accountFromVariable(adminVariablePath, "admin");
     },
     async readJournal() {
       return (await wmill.getState("f/aerodrome/__vote_state")) ?? {};
@@ -983,13 +817,13 @@ type PreparedBatchVote = {
  */
 async function executeBatched(
   client: PublicClient,
-  snapshot: Snapshot,
+  snapshot: ExecutionSnapshot,
   allocations: Allocation[],
   policy: Policy,
   dryRun: boolean,
   deps: ExecutionDeps,
   voteExecutor: Address,
-  relayerAddress: Address,
+  adminAddress: Address,
   batchSize: number,
 ): Promise<Record<string, unknown>[]> {
   const journal = dryRun ? {} : await deps.readJournal();
@@ -1000,24 +834,36 @@ async function executeBatched(
       policy.maxSnapshotAgeSeconds,
     "Snapshot expired; rerun collection",
   );
+  const pending = allocations.filter((allocation) => {
+    if (withinVotingWindow(Number(latest.timestamp), snapshot)) return true;
+    results.push({
+      tokenId: allocation.tokenId,
+      status: "outside_voting_window",
+    });
+    return false;
+  });
+  // Read every NFT precondition in one fixed-block multicall. Per-NFT
+  // multicalls add one network round trip for each allocation.
+  const checks = pending.length
+    ? await many(
+        client,
+        latest.number!,
+        pending.flatMap((allocation) => [
+          call(VE, "ownerOf", BigInt(allocation.tokenId)),
+          call(VOTER, "lastVoted", BigInt(allocation.tokenId)),
+          call(VE, "balanceOfNFT", BigInt(allocation.tokenId)),
+        ]),
+      )
+    : [];
   const prepared: PreparedBatchVote[] = [];
-  for (const allocation of allocations) {
-    if (!executionWindow(Number(latest.timestamp), snapshot, policy)) {
-      results.push({
-        tokenId: allocation.tokenId,
-        status: "outside_execution_window",
-      });
-      continue;
-    }
-    const [owner, last, power, kind] = await many(client, latest.number!, [
-      call(VE, "ownerOf", BigInt(allocation.tokenId)),
-      call(VOTER, "lastVoted", BigInt(allocation.tokenId)),
-      call(VE, "balanceOfNFT", BigInt(allocation.tokenId)),
-      call(VE, "escrowType", BigInt(allocation.tokenId)),
-    ]);
+  for (let i = 0; i < pending.length; i++) {
+    const allocation = pending[i];
+    const owner = checks[i * 3];
+    const last = checks[i * 3 + 1];
+    const power = checks[i * 3 + 2];
     assert(
-      owner.toLowerCase() === allocation.owner.toLowerCase() && kind === 0,
-      "NFT ownership/type changed",
+      owner.toLowerCase() === allocation.owner.toLowerCase(),
+      "NFT ownership changed",
     );
     if (Number(last) >= snapshot.epoch) {
       results.push({ tokenId: allocation.tokenId, status: "already_voted" });
@@ -1054,6 +900,8 @@ async function executeBatched(
     prepared.push({ allocation, key });
   }
 
+  let account: LocalAccount | undefined;
+
   for (let start = 0; start < prepared.length; start += batchSize) {
     const batch = prepared.slice(start, start + batchSize);
     const tokenIds = batch.map(({ allocation }) => BigInt(allocation.tokenId));
@@ -1073,7 +921,7 @@ async function executeBatched(
         abi: VOTE_EXECUTOR_ABI,
         functionName: "voteMany",
         args,
-        account: relayerAddress,
+        account: adminAddress,
       });
     } catch {
       throw new Error(
@@ -1081,54 +929,6 @@ async function executeBatched(
           .map(({ allocation }) => allocation.tokenId)
           .join(",")}; no transaction sent`,
       );
-    }
-    const gas = await client.estimateContractGas({
-      address: voteExecutor,
-      abi: VOTE_EXECUTOR_ABI,
-      functionName: "voteMany",
-      args,
-      account: relayerAddress,
-    });
-    const gasLimit = (gas * 125n) / 100n;
-    const fees = await client.estimateFeesPerGas();
-    assert(fees.maxFeePerGas !== undefined, "Missing EIP-1559 fee quote");
-    const oracleAbi = parseAbi([
-      "function getL1Fee(bytes) view returns (uint256)",
-      "function getOperatorFee(uint256) view returns (uint256)",
-    ]);
-    const envelope = (data + "ff".repeat(256)) as Hex;
-    const l1 = await client.readContract({
-      address: "0x420000000000000000000000000000000000000F",
-      abi: oracleAbi,
-      functionName: "getL1Fee",
-      args: [envelope],
-      authorizationList: undefined,
-    });
-    const operator = await client.readContract({
-      address: "0x420000000000000000000000000000000000000F",
-      abi: oracleAbi,
-      functionName: "getOperatorFee",
-      args: [gasLimit],
-      authorizationList: undefined,
-    });
-    const feeWei = gasLimit * fees.maxFeePerGas + (l1 + operator) * 2n;
-    const gasUsd = units(feeWei) * snapshot.ethUsd;
-    const perVoteGasUsd = gasUsd / batch.length;
-    if (
-      perVoteGasUsd > policy.maxGasUsd ||
-      batch.some(
-        ({ allocation }) =>
-          allocation.estimatedRewardUsd - perVoteGasUsd < policy.minNetUsd,
-      )
-    ) {
-      for (const { allocation } of batch)
-        results.push({
-          tokenId: allocation.tokenId,
-          status: "below_net_return_or_gas_limit",
-          gasUsd: perVoteGasUsd,
-          estimatedRewardUsd: allocation.estimatedRewardUsd,
-        });
-      continue;
     }
     if (dryRun) {
       for (const { allocation } of batch)
@@ -1138,36 +938,40 @@ async function executeBatched(
           to: voteExecutor,
           data,
           batchSize: batch.length,
-          gasUsd: perVoteGasUsd,
-          estimatedNetUsd: allocation.estimatedRewardUsd - perVoteGasUsd,
         });
       continue;
     }
-    const account = await deps.relayerAccount!();
+    const gas = await client.estimateContractGas({
+      address: voteExecutor,
+      abi: VOTE_EXECUTOR_ABI,
+      functionName: "voteMany",
+      args,
+      account: adminAddress,
+    });
+    const gasLimit = (gas * 125n) / 100n;
+    const fees = await client.estimateFeesPerGas();
+    assert(fees.maxFeePerGas !== undefined, "Missing EIP-1559 fee quote");
+    account ??= await deps.adminAccount();
     assert(
-      account.address.toLowerCase() === relayerAddress.toLowerCase(),
-      "Relayer signing key does not match relayerAddress",
+      account.address.toLowerCase() === adminAddress.toLowerCase(),
+      "Admin signing key does not match adminAddress",
     );
     const nonce = await client.getTransactionCount({
-      address: relayerAddress,
+      address: adminAddress,
       blockTag: "pending",
     });
     assert(
       nonce ===
         (await client.getTransactionCount({
-          address: relayerAddress,
+          address: adminAddress,
           blockTag: "latest",
         })),
-      "Relayer has pending transactions; retry after confirmation",
-    );
-    assert(
-      (await client.getBalance({ address: relayerAddress })) >= feeWei,
-      "Insufficient ETH for vote",
+      "Admin has pending transactions; retry after confirmation",
     );
     const beforeSign = await client.getBlock();
     assert(
-      executionWindow(Number(beforeSign.timestamp), snapshot, policy),
-      "Execution window closed",
+      withinVotingWindow(Number(beforeSign.timestamp), snapshot),
+      "Voting window closed or not started",
     );
     const signed = await account.signTransaction({
       chainId: 8453,
@@ -1185,7 +989,7 @@ async function executeBatched(
       journal[key] = {
         hash,
         owner: allocation.owner,
-        sender: relayerAddress,
+        sender: adminAddress,
         nonce,
         status: "prepared",
         epoch: snapshot.epoch,
@@ -1239,8 +1043,6 @@ async function executeBatched(
         status: "confirmed",
         hash,
         batchSize: batch.length,
-        gasUsd: perVoteGasUsd,
-        estimatedNetUsd: allocation.estimatedRewardUsd - perVoteGasUsd,
       });
     }
   }
@@ -1249,7 +1051,7 @@ async function executeBatched(
 
 export async function execute(
   client: PublicClient,
-  snapshot: Snapshot,
+  snapshot: ExecutionSnapshot,
   allocations: Allocation[],
   policy: Policy,
   dryRun: boolean,
@@ -1257,26 +1059,27 @@ export async function execute(
   executorConfig: Partial<VoteExecutorConfig> = {},
 ) {
   assert(typeof dryRun === "boolean", "dryRun must be a boolean");
-  assert(deps, "Execution requires relayer and journal adapters");
+  validatePolicy(policy);
+  assert(deps, "Execution requires admin and journal adapters");
   const voteExecutor = executorConfig.voteExecutor
     ? getAddress(executorConfig.voteExecutor)
     : undefined;
-  const relayerAddress = executorConfig.relayerAddress
-    ? getAddress(executorConfig.relayerAddress)
+  const adminAddress = executorConfig.adminAddress
+    ? getAddress(executorConfig.adminAddress)
     : undefined;
   assert(voteExecutor, "voteExecutor is required");
-  assert(relayerAddress, "relayerAddress is required");
-  assert(deps.relayerAccount, "Execution dependencies must provide relayerAccount");
+  assert(adminAddress, "adminAddress is required");
+  assert(deps.adminAccount, "Execution dependencies must provide adminAccount");
   const batchSize = executorConfig.batchSize ?? DEFAULT_EXECUTOR_BATCH_SIZE;
   assert(
     Number.isInteger(batchSize) && batchSize >= 1 && batchSize <= 50,
     "executor batchSize must be an integer from 1 to 50",
   );
-  const [configuredRelayer, configuredVoter] = await Promise.all([
+  const [configuredAdmin, configuredVoter] = await Promise.all([
     client.readContract({
       address: voteExecutor,
       abi: VOTE_EXECUTOR_ABI,
-      functionName: "relayer",
+      functionName: "admin",
       blockNumber: BigInt(snapshot.block),
       authorizationList: undefined,
     }),
@@ -1289,8 +1092,8 @@ export async function execute(
     }),
   ]);
   assert(
-    getAddress(configuredRelayer) === relayerAddress,
-    "VoteExecutor relayer does not match relayerAddress",
+    getAddress(configuredAdmin) === adminAddress,
+    "VoteExecutor admin does not match adminAddress",
   );
   assert(
     getAddress(configuredVoter) === VOTER,
@@ -1304,7 +1107,7 @@ export async function execute(
     dryRun,
     deps,
     voteExecutor,
-    relayerAddress,
+    adminAddress,
     batchSize,
   );
 }

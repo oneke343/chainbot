@@ -1,0 +1,12 @@
+summary: Aerodrome pool view adapter
+description: Internal adapter for the optional AerodromePoolView contract. It
+  reads paged active pools, rewards, and token decimals from one fixed-block
+  view call per page. Use collect_snapshot with poolViewAddress instead of
+  invoking it directly.
+lock: '!inline f/aerodrome/lib/pool_view.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

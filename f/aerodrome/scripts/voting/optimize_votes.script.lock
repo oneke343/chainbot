@@ -41,7 +41,7 @@
 
     "viem": ["viem@2.56.3", "", { "dependencies": { "@noble/curves": "1.9.1", "@noble/hashes": "1.8.0", "@scure/bip32": "1.7.0", "@scure/bip39": "1.6.0", "abitype": "1.2.3", "isows": "1.0.7", "ox": "0.14.44", "ws": "8.21.0" }, "peerDependencies": { "typescript": ">=5.0.4" }, "optionalPeers": ["typescript"] }, "sha512-vUObq3GO7D3lz9gPNEE/xd5jIUnMbeVDWewh252o54pDEDlW4pDe6FEd/qTGL5RyK52cGHMM7kQ3wjxhilEvkQ=="],
 
-    "windmill-client": ["windmill-client@1.806.0", "", {}, "sha512-197UuOCR/dRbuNHETahjyW6KAIkvdfBnsYteOy3SVXByuMLtww8zCkBPpGlwG4hP/SoIlNIWFfDDZbemqJ1z7Q=="],
+    "windmill-client": ["windmill-client@1.807.0", "", {}, "sha512-XqE+S6jS0d5VXwLVjR4iKEzZw4HSV/yaRVnuifGkVZy3Qas3/sqL0f56mc4qIedLxy/IG8PDWz3aRNMdB0Vw7w=="],
 
     "ws": ["ws@8.21.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
   }

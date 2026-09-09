@@ -1,7 +1,7 @@
 summary: Simulate and execute veAERO votes
-description: Revalidates the snapshot and NFT state, simulates each vote batch, and
-  when dryRun is false signs, broadcasts, confirms, and journals each
-  transaction. The relayer secret is the only signing secret read; the wrapper
+description: Revalidates the snapshot and NFT state, simulates each vote batch,
+  and when dryRun is false signs, broadcasts, confirms, and journals each
+  transaction. The admin secret is the only signing secret read; the wrapper
   forwards only atomic VoteExecutor.voteMany operations; owner signing secrets
   are never read.
 lock: '!inline f/aerodrome/scripts/voting/execute_votes.script.lock'
@@ -10,6 +10,18 @@ schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
+    adminAddress:
+      type: string
+      description: Admin address bound in VoteExecutor; must match the address derived
+        from adminVariablePath.
+      default: ''
+      originalType: string
+    adminVariablePath:
+      type: string
+      description: Windmill Secret Variable path containing the admin private key; the
+        key is not read during dry-run.
+      default: ''
+      originalType: string
     allocations:
       type: array
       description: Vote plans returned by optimize_votes, including token IDs, pool
@@ -28,25 +40,15 @@ schema:
       type: integer
       description: Maximum number of NFTs included in one atomic VoteExecutor.voteMany
         transaction; 1 uses a one-item voteMany call.
-      default: 16
-      minimum: 1
+      default: null
       maximum: 50
+      minimum: 1
     options:
       type: object
       description: Execution and policy options; must match the policy used to create
         the allocations.
       default: {}
       format: resource-partial
-    relayerAddress:
-      type: string
-      description: Relayer address bound in VoteExecutor; must match the address
-        derived from relayerVariablePath.
-      originalType: string
-    relayerVariablePath:
-      type: string
-      description: Windmill Secret Variable path containing the relayer private key;
-        the key is not read during dry-run.
-      originalType: string
     rpcUrl:
       type: string
       description: Base JSON-RPC URL used for simulation, fee estimation, and
@@ -55,18 +57,16 @@ schema:
       originalType: string
     snapshot:
       type: object
-      description: Fixed-block output from collect_snapshot used for freshness and
-        on-chain state rechecks.
+      description: Execution metadata selected from collect_snapshot; used for
+        freshness, epoch-end checks, and on-chain state rechecks.
       default: null
-      format: resource-snapshot
+      format: resource-execution_snapshot
     voteExecutor:
       type: string
-      description: Minimal-permission VoteExecutor address. The NFT owner must
-        approve this address per tokenId in VotingEscrow before use.
+      description: Minimal-permission VoteExecutor address. The NFT owner must approve
+        this address per tokenId in VotingEscrow before use.
+      default: ''
       originalType: string
   required:
     - snapshot
     - allocations
-    - voteExecutor
-    - relayerAddress
-    - relayerVariablePath

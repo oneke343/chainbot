@@ -4,10 +4,9 @@ import {
   clientFor,
   execute,
   makeExecutionDeps,
-  validatePolicy,
   type Allocation,
+  type ExecutionSnapshot,
   type Policy,
-  type Snapshot,
 } from "../../lib/vote.ts";
 import { getAddress } from "viem";
 
@@ -18,25 +17,22 @@ import { getAddress } from "viem";
  * here.
  */
 export async function main(
-  snapshot: Snapshot,
+  snapshot: ExecutionSnapshot,
   allocations: Allocation[],
   rpcUrl = "https://base-rpc.publicnode.com",
   dryRun = true,
   options: Partial<Policy> = {},
   voteExecutor = "",
-  relayerAddress = "",
-  relayerVariablePath = "",
+  adminAddress = "",
+  adminVariablePath = "",
   executorBatchSize = DEFAULT_EXECUTOR_BATCH_SIZE,
 ) {
   const started = Date.now();
   const policy = { ...DEFAULT_POLICY, ...options };
-  validatePolicy(policy);
   if (!/^0x[0-9a-fA-F]{40}$/.test(voteExecutor))
     throw new Error("voteExecutor is required and must be a valid EVM address");
-  if (!/^0x[0-9a-fA-F]{40}$/.test(relayerAddress))
-    throw new Error("relayerAddress is required and must be a valid EVM address");
-  if (!relayerVariablePath)
-    throw new Error("relayerVariablePath is required");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(adminAddress))
+    throw new Error("adminAddress is required and must be a valid EVM address");
 
   const execution = await execute(
     clientFor(rpcUrl),
@@ -44,10 +40,10 @@ export async function main(
     allocations,
     policy,
     dryRun,
-    makeExecutionDeps(relayerVariablePath),
+    makeExecutionDeps(adminVariablePath),
     {
       voteExecutor: getAddress(voteExecutor),
-      relayerAddress: getAddress(relayerAddress),
+      adminAddress: getAddress(adminAddress),
       batchSize: executorBatchSize,
     },
   );
@@ -61,7 +57,7 @@ export async function main(
       simulated: execution.filter((r) => r.status === "simulated").length,
       confirmed: execution.filter((r) => r.status === "confirmed").length,
       skipped: execution.filter((r) =>
-        ["already_voted", "outside_execution_window", "below_net_return_or_gas_limit"].includes(String(r.status)),
+        ["already_voted", "outside_voting_window"].includes(String(r.status)),
       ).length,
     },
   };

@@ -1,0 +1,12 @@
+summary: Aerodrome Sugar data access
+description: Internal adapter for Aerodrome Sugar deployments on Base. It reads
+  veAERO NFT snapshots and validates the deployed Sugar addresses for the voting
+  flow. Pool and reward reads are handled by AerodromePoolView. Use
+  collect_snapshot instead of invoking it directly.
+lock: '!inline f/aerodrome/lib/sugar.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []
