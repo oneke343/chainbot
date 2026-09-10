@@ -1,5 +1,6 @@
 import { parseAbi, type Address } from "viem";
 
+export const BASE_CHAIN_ID = 8453;
 export const VOTER =
   "0x16613524e02ad97eDfeF371bC883F2F5d6C480A5" as Address;
 export const VE = "0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4" as Address;
@@ -26,4 +27,3 @@ export const VOTE_EXECUTOR_ABI = parseAbi([
   "function recoverETH(address,uint256)",
   "function AERODROME_VOTER() view returns (address)",
 ]);
-

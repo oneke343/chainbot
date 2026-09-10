@@ -1,4 +1,10 @@
-import { getAddress, isAddress, type Address, type Hex } from "viem";
+import {
+  getAddress,
+  isAddress,
+  isHex,
+  type Address,
+  type Hex,
+} from "viem";
 
 export const ZERO_ADDRESS =
   "0x0000000000000000000000000000000000000000" as Address;
@@ -104,6 +110,13 @@ export const DEFAULT_POLICY: Policy = {
   maxSnapshotAgeSeconds: 900,
 };
 
+/** Construct the complete internal policy from untrusted Flow overrides. */
+export function resolvePolicy(overrides: Partial<Policy> = {}): Policy {
+  const policy = { ...DEFAULT_POLICY, ...overrides };
+  validatePolicy(policy);
+  return policy;
+}
+
 export type OptimizationMetrics = {
   eligibleNfts: number;
   totalVotingPower: string;
@@ -127,6 +140,57 @@ export type JournalEntry = {
 
 export type Journal = Record<string, JournalEntry>;
 
+/** Parse Windmill state once at the persistence boundary. */
+export function parseJournal(value: unknown): Journal {
+  if (value === null || value === undefined) return {};
+  assertRecord(value, "Vote journal must be an object");
+  const journal: Journal = {};
+  for (const [key, raw] of Object.entries(value)) {
+    assertRecord(raw, `Invalid vote journal entry ${key}`);
+    const hash = raw.hash;
+    const owner = raw.owner;
+    const sender = raw.sender;
+    const nonce = raw.nonce;
+    const status = raw.status;
+    const epoch = raw.epoch;
+    const tokenId = raw.tokenId;
+    if (
+      !isHex(hash) || hash.length !== 66 ||
+      typeof owner !== "string" || !isAddress(owner) ||
+      (sender !== undefined &&
+        (typeof sender !== "string" || !isAddress(sender))) ||
+      !Number.isInteger(nonce) || nonce < 0 ||
+      !isJournalStatus(status) ||
+      !Number.isInteger(epoch) || typeof tokenId !== "string"
+    )
+      throw new Error(`Invalid vote journal entry ${key}`);
+    journal[key] = {
+      hash,
+      owner: getAddress(owner),
+      ...(sender === undefined ? {} : { sender: getAddress(sender) }),
+      nonce,
+      status,
+      epoch,
+      tokenId,
+    };
+  }
+  return journal;
+}
+
+function isJournalStatus(
+  value: unknown,
+): value is JournalEntry["status"] {
+  return value === "prepared" || value === "confirmed" || value === "reverted";
+}
+
+function assertRecord(
+  value: unknown,
+  message: string,
+): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error(message);
+}
+
 export type ExecutionSkipReason = "already_voted" | "outside_voting_window";
 
 export type ExecutionSkip = {
@@ -135,8 +199,10 @@ export type ExecutionSkip = {
 };
 
 export type ExecutionSimulation = {
-  status: "success";
+  status: "success" | "not_run";
   returnData?: Hex;
+  gasUsed?: string;
+  blockNumber?: string;
 };
 
 export type ExecutionBroadcast = {
@@ -154,7 +220,13 @@ export type ExecutionBatchResult = {
   transaction: {
     to: Address;
     data?: Hex;
+    chainId?: number;
     nonce?: number;
+    estimatedGas?: string;
+    gasLimit?: string;
+    gasPrice?: string;
+    maxFeePerGas?: string;
+    maxPriorityFeePerGas?: string;
     signedHash?: Hex;
   };
   simulation?: ExecutionSimulation;

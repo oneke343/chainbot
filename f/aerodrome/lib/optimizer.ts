@@ -234,9 +234,9 @@ export function optimizeDetailed(
 
   const minimum = Math.ceil(1 / policy.maxShare - 1e-10);
   invariant(k >= minimum, "Too few valued pools for maxShare");
-  let greedy =
+  let greedy: Candidate[] =
     minimum === 1
-      ? ([] as Candidate[])
+      ? []
       : relaxedSelection.slice(0, minimum);
   while (greedy.length < Math.min(k, candidates.length)) {
     let best: Candidate | undefined;

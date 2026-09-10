@@ -15,7 +15,7 @@ import {
 } from "./rpc.ts";
 import { readVeNfts, validateSugar } from "./sugar.ts";
 import { readPoolView } from "./pool_view.ts";
-import { ABI, VE, VOTER } from "./protocol.ts";
+import { ABI, BASE_CHAIN_ID, VE, VOTER } from "./protocol.ts";
 import {
   ZERO_ADDRESS,
   type CollectResult,
@@ -65,6 +65,30 @@ function addTiming(
 }
 
 type Price = { price: number; timestamp: number; confidence?: number };
+
+type DeploymentSnapshot = {
+  ve: Address;
+  voter: Address;
+  epoch: bigint;
+  voteStart: bigint;
+  voteEnd: bigint;
+  maxPools: bigint;
+};
+
+function parseDeploymentSnapshot(reads: unknown[]): DeploymentSnapshot {
+  const [ve, voter, epoch, voteStart, voteEnd, maxPools] = reads;
+  assert(
+    typeof ve === "string" && isAddress(ve) &&
+      typeof voter === "string" && isAddress(voter) &&
+      typeof epoch === "bigint" &&
+      typeof voteStart === "bigint" &&
+      typeof voteEnd === "bigint" &&
+      typeof maxPools === "bigint",
+    "Unexpected Aerodrome deployment read result",
+  );
+  return { ve, voter, epoch, voteStart, voteEnd, maxPools };
+}
+
 // CoinLlama accepts a bounded list per request. Fetch those lists in parallel
 // so latency is approximately the slowest batch instead of their sum.
 const PRICE_BATCH_SIZE = 100;
@@ -275,7 +299,10 @@ export async function collectDetailed(
   const owners = [...new Set(walletAddresses.map((a) => a.toLowerCase()))].map(
     (a) => getAddress(a),
   );
-  assert(!client.chain || client.chain.id === 8453, "RPC must be Base (8453)");
+  assert(
+    !client.chain || client.chain.id === BASE_CHAIN_ID,
+    `RPC must be Base (${BASE_CHAIN_ID})`,
+  );
   const block = await client.getBlock({ blockTag: "latest" });
   assert(block.number !== null, "Missing block number");
   const deploymentReads = await many<unknown>(
@@ -292,22 +319,14 @@ export async function collectDetailed(
     false,
     config,
   );
-  const [rawVe, rawVoter, rawEpoch, rawStart, rawEnd, rawMaxPools] = deploymentReads;
-  assert(
-    typeof rawVe === "string" && isAddress(rawVe) &&
-      typeof rawVoter === "string" && isAddress(rawVoter) &&
-      typeof rawEpoch === "bigint" &&
-      typeof rawStart === "bigint" &&
-      typeof rawEnd === "bigint" &&
-      typeof rawMaxPools === "bigint",
-    "Unexpected Aerodrome deployment read result",
-  );
-  const ve = rawVe as Address;
-  const voter = rawVoter as Address;
-  const epoch = rawEpoch as bigint;
-  const start = rawStart as bigint;
-  const end = rawEnd as bigint;
-  const maxPools = rawMaxPools as bigint;
+  const {
+    ve,
+    voter,
+    epoch,
+    voteStart: start,
+    voteEnd: end,
+    maxPools,
+  } = parseDeploymentSnapshot(deploymentReads);
   const deploymentValidationMs = Date.now() - started;
   assert(
     ve.toLowerCase() === VE.toLowerCase() &&

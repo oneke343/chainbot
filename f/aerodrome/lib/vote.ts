@@ -6,6 +6,7 @@ export type { PublicClient, ReadConfig } from "./rpc.ts";
 
 export {
   ABI,
+  BASE_CHAIN_ID,
   DEFAULT_EXECUTOR_BATCH_SIZE,
   VE,
   VOTER,
@@ -14,6 +15,8 @@ export {
 
 export {
   DEFAULT_POLICY,
+  resolvePolicy,
+  parseJournal,
   validatePolicy,
   type Allocation,
   type CollectResult,

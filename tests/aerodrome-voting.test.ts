@@ -9,6 +9,7 @@ import {
   validatePolicy,
   execute,
   mapWithConcurrency,
+  parseJournal,
   DEFAULT_POLICY,
   DEFAULT_EXECUTOR_BATCH_SIZE,
   VOTER,
@@ -19,6 +20,57 @@ import {
 import { readPoolView } from "../f/aerodrome/lib/pool_view.ts";
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 const raw = (n: number) => parseUnits(String(n), 18).toString();
+const hex = (n: bigint | number) => `0x${BigInt(n).toString(16)}` as Hex;
+
+function viemActionMocks(options: {
+  gas?: bigint;
+  nonce?: number;
+  fees?: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  onSimulation?: (call: Record<string, unknown>) => void;
+  onRequest?: (method: string) => void;
+} = {}) {
+  return {
+    async estimateFeesPerGas() {
+      return options.fees ?? { maxFeePerGas: 2n, maxPriorityFeePerGas: 1n };
+    },
+    async simulateBlocks({ blocks }: { blocks: Array<{ calls: Array<Record<string, unknown>> }> }) {
+      options.onRequest?.("eth_simulateV1");
+      const call = blocks[0].calls[0];
+      options.onSimulation?.({ ...call, from: call.account });
+      return [{
+        number: 2n,
+        calls: [{ status: "success", data: "0x", gasUsed: 100000n }],
+      }];
+    },
+    async fillTransaction({
+      account,
+      to,
+      data,
+      value,
+    }: {
+      account: Address;
+      to: Address;
+      data: Hex;
+      value: bigint;
+    }) {
+      options.onRequest?.("eth_fillTransaction");
+      return {
+        raw: "0x",
+        transaction: {
+          from: account,
+          to,
+          input: data,
+          value,
+          gas: options.gas ?? 125000n,
+          nonce: options.nonce ?? 7,
+          chainId: 8453,
+          gasPrice: 1n,
+        },
+      };
+    },
+  };
+}
+
 function nft(id: number, power: number): Nft {
   return {
     tokenId: String(id),
@@ -172,6 +224,27 @@ test("invalid inputs cannot silently turn off limits", () => {
   assert.throws(() => optimize(s, policy), /smaller/);
 });
 
+test("journal state is parsed before retry logic consumes it", () => {
+  const hash = `0x${"a".repeat(64)}` as Hex;
+  const parsed = parseJournal({
+    "604800:1": {
+      hash,
+      owner: `0x${addr(1).slice(2).toUpperCase()}`,
+      sender: addr(2),
+      nonce: 7,
+      status: "prepared",
+      epoch: 604800,
+      tokenId: "1",
+    },
+  });
+  assert.equal(parsed["604800:1"].hash, hash);
+  assert.equal(parsed["604800:1"].nonce, 7);
+  assert.throws(
+    () => parseJournal({ broken: { hash, owner: addr(1), status: "unknown" } }),
+    /Invalid vote journal entry broken/,
+  );
+});
+
 test("a zero-vote incentive pool is not lost to rounding or subset selection", () => {
   const s=fixture();
   s.pools[0].votes="0";
@@ -260,13 +333,14 @@ test("excluded pool addresses must be valid non-zero addresses", () => {
   );
 });
 
-test("execution gates prevent signing after epoch end and gas estimation failure", async () => {
+test("execution gates prevent signing after epoch end and simulation failure", async () => {
   const s=fixture();s.timestamp=s.voteEnd-3600;
   const plans=optimize(s,policy);let signed=0;
   const fake={
     async getBlock(){return {number:2n,timestamp:BigInt(s.timestamp)};},
     async multicall(){return [plans[0].owner,0n,BigInt(plans[0].power),0].map(result=>({status:"success",result}));},
-    async estimateContractGas(){throw Error("revert");},
+    async estimateFeesPerGas(){return {maxFeePerGas: 2n, maxPriorityFeePerGas: 1n};},
+    async simulateBlocks(){throw Error("revert");},
     async readContract(args: { functionName: string }) {
       return args.functionName === "admin" ? addr(901) : VOTER;
     },
@@ -286,7 +360,13 @@ test("executor mode simulates with the admin and wrapper target", async () => {
   const allocation = optimize(s, policy)[0];
   const executor = addr(900);
   const admin = addr(901);
-  let simulation: { to: Address; account: Address } | undefined;
+  let simulation: {
+    to: Address;
+    account: Address;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+  } | undefined;
+  const requests: string[] = [];
   const fake = {
     async getBlock() {
       return { number: 2n, timestamp: BigInt(s.timestamp) };
@@ -297,16 +377,17 @@ test("executor mode simulates with the admin and wrapper target", async () => {
         result,
       }));
     },
-    async call(args: { to: Address; account: Address }) {
-      simulation = { to: args.to, account: args.account };
-      return { data: "0x" };
-    },
-    async estimateContractGas() {
-      return 100000n;
-    },
-    async estimateFeesPerGas() {
-      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
-    },
+    ...viemActionMocks({
+      onRequest: (method) => requests.push(method),
+      onSimulation: (call) => {
+        simulation = {
+          to: call.to as Address,
+          account: call.from as Address,
+          maxFeePerGas: call.maxFeePerGas as bigint,
+          maxPriorityFeePerGas: call.maxPriorityFeePerGas as bigint,
+        };
+      },
+    }),
     async readContract(args: { functionName: string }) {
       if (args.functionName === "admin") return admin;
       if (args.functionName === "AERODROME_VOTER") return VOTER;
@@ -328,6 +409,9 @@ test("executor mode simulates with the admin and wrapper target", async () => {
   assert.equal(result.batches[0].simulation?.status, "success");
   assert.equal(simulation?.to.toLowerCase(), executor.toLowerCase());
   assert.equal(simulation?.account.toLowerCase(), admin.toLowerCase());
+  assert.equal(simulation?.maxFeePerGas, 2n);
+  assert.equal(simulation?.maxPriorityFeePerGas, 1n);
+  assert.deepEqual(requests, ["eth_simulateV1", "eth_fillTransaction"]);
 });
 
 test("executor batch mode encodes one atomic voteMany call", async () => {
@@ -356,16 +440,11 @@ test("executor batch mode encodes one atomic voteMany call", async () => {
       if (args.functionName === "AERODROME_VOTER") return VOTER;
       return 0n;
     },
-    async call(args: { to: Address; account: Address }) {
-      simulation = { to: args.to, account: args.account };
-      return { data: "0x" };
-    },
-    async estimateContractGas() {
-      return 200000n;
-    },
-    async estimateFeesPerGas() {
-      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
-    },
+    ...viemActionMocks({
+      onSimulation: (call) => {
+        simulation = { to: call.to as Address, account: call.from as Address };
+      },
+    }),
   } as unknown as Parameters<typeof execute>[0];
   const result = await execute(
     fake,
@@ -399,9 +478,9 @@ test("executor dry-run signs locally and simulates without broadcasting", async 
   const executor = addr(920);
   const admin = privateKeyToAccount(`0x${"11".repeat(32)}` as Hex);
   let contractSimulations = 0;
-  let ethCalls = 0;
   let broadcasts = 0;
   let journalWrites = 0;
+  const requests: string[] = [];
   const fake = {
     async getBlock() {
       return { number: 2n, timestamp: BigInt(s.timestamp) };
@@ -420,20 +499,15 @@ test("executor dry-run signs locally and simulates without broadcasting", async 
     async simulateContract() {
       contractSimulations++;
     },
-    async estimateContractGas() {
-      return 100000n;
-    },
-    async estimateFeesPerGas() {
-      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
-    },
+    ...viemActionMocks({
+      onRequest: (method) => requests.push(method),
+      onSimulation: (call) => {
+        assert.equal((call.from as string).toLowerCase(), admin.address.toLowerCase());
+        assert.equal((call.to as string).toLowerCase(), executor.toLowerCase());
+      },
+    }),
     async getTransactionCount() {
       return 7;
-    },
-    async call(args: { account: Address; to: Address }) {
-      ethCalls++;
-      assert.equal(args.account.toLowerCase(), admin.address.toLowerCase());
-      assert.equal(args.to.toLowerCase(), executor.toLowerCase());
-      return { data: "0x" as Hex };
     },
     async sendRawTransaction() {
       broadcasts++;
@@ -453,9 +527,9 @@ test("executor dry-run signs locally and simulates without broadcasting", async 
     { voteExecutor: executor, adminAddress: admin.address },
   );
   assert.equal(contractSimulations, 0);
-  assert.equal(ethCalls, 1);
   assert.equal(broadcasts, 0);
   assert.equal(journalWrites, 0);
+  assert.deepEqual(requests, ["eth_simulateV1", "eth_fillTransaction"]);
   assert.equal(result.batches[0].status, "simulated");
   assert.equal(result.batches[0].source, "executed");
   assert.equal(result.batches[0].simulation?.status, "success");
@@ -487,12 +561,7 @@ test("executor result contains the broadcast receipt", async () => {
       if (args.functionName === "AERODROME_VOTER") return VOTER;
       return 0n;
     },
-    async estimateContractGas() {
-      return 100000n;
-    },
-    async estimateFeesPerGas() {
-      return { maxFeePerGas: 1n, maxPriorityFeePerGas: 1n };
-    },
+    ...viemActionMocks(),
     async getTransactionCount() {
       return 7;
     },

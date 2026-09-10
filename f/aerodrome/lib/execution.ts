@@ -1,12 +1,16 @@
 import {
   encodeFunctionData,
   getAddress,
+  isAddress,
+  isHex,
   keccak256,
   type Address,
+  type FormattedTransaction,
   type Hex,
   type LocalAccount,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { base } from "viem/chains";
 import * as wmill from "windmill-client";
 import {
   assert,
@@ -19,6 +23,7 @@ import {
 } from "./rpc.ts";
 import {
   ABI,
+  BASE_CHAIN_ID,
   DEFAULT_EXECUTOR_BATCH_SIZE,
   VE,
   VOTER,
@@ -33,6 +38,8 @@ import {
   type Journal,
   type Policy,
   type VoteExecutorConfig,
+  parseJournal,
+  validatePolicy,
 } from "./domain.ts";
 
 function many<T>(
@@ -45,14 +52,146 @@ function many<T>(
 
 type ExecutionMode = "unsigned-simulation" | "signed-simulation" | "broadcast";
 
-async function simulateTransaction(
-  client: PublicClient,
-  request: Parameters<PublicClient["call"]>[0],
-): Promise<ExecutionSimulation> {
-  const { data } = await client.call(request);
+type FilledTransaction = FormattedTransaction<typeof base>;
+
+type TransactionIntent = {
+  from: Address;
+  to: Address;
+  input: Hex;
+  value: bigint;
+};
+
+type ValidatedFilledTransaction = {
+  from: Address;
+  to: Address;
+  input: Hex;
+  value: bigint;
+  chainId: number;
+  nonce: number;
+  gas: bigint;
+} & (
+  | { type: "legacy"; gasPrice: bigint }
+  | {
+      type: "eip1559";
+      maxFeePerGas: bigint;
+      maxPriorityFeePerGas: bigint;
+    }
+);
+
+function validateFilledTransaction(
+  filled: FilledTransaction,
+  intent: TransactionIntent,
+): ValidatedFilledTransaction {
+  assert(
+    typeof filled.from === "string" && isAddress(filled.from),
+    "Filled transaction is missing a valid sender",
+  );
+  assert(
+    typeof filled.to === "string" && isAddress(filled.to),
+    "Filled transaction is missing a valid target",
+  );
+  assert(isHex(filled.input), "Filled transaction is missing calldata");
+  assert(
+    typeof filled.value === "bigint" && typeof filled.chainId === "number" &&
+      typeof filled.nonce === "number" && typeof filled.gas === "bigint",
+    "Filled transaction is missing required fields",
+  );
+  assert(
+    getAddress(filled.from) === getAddress(intent.from),
+    "Filled transaction sender does not match adminAddress",
+  );
+  assert(
+    getAddress(filled.to) === getAddress(intent.to),
+    "Filled transaction target does not match voteExecutor",
+  );
+  assert(
+    filled.input.toLowerCase() === intent.input.toLowerCase(),
+    "Filled transaction data changed",
+  );
+  assert(filled.value === intent.value, "Filled transaction value changed");
+  assert(
+    filled.chainId === BASE_CHAIN_ID,
+    `Filled transaction chainId is not Base mainnet (${BASE_CHAIN_ID})`,
+  );
+  assert(filled.gas > 0n, "Filled transaction is missing gas");
+  assert(filled.nonce >= 0, "Filled transaction has an invalid nonce");
+  const common = {
+    from: getAddress(filled.from),
+    to: getAddress(filled.to),
+    input: filled.input,
+    value: filled.value,
+    chainId: filled.chainId,
+    nonce: filled.nonce,
+    gas: filled.gas,
+  } as const;
+  const legacyFees = filled.gasPrice !== undefined;
+  const eip1559Fees =
+    filled.maxFeePerGas !== undefined ||
+    filled.maxPriorityFeePerGas !== undefined;
+  if (filled.type === "legacy" || (filled.type === undefined && legacyFees)) {
+    assert(
+      filled.gasPrice !== undefined &&
+        !eip1559Fees,
+      "Legacy filled transaction must contain only gasPrice",
+    );
+    return { ...common, type: "legacy", gasPrice: filled.gasPrice };
+  }
+  if (
+    filled.type === "eip1559" ||
+    (filled.type === undefined && eip1559Fees)
+  ) {
+    assert(
+      filled.maxFeePerGas !== undefined &&
+        filled.maxPriorityFeePerGas !== undefined &&
+        filled.gasPrice === undefined,
+      "EIP-1559 filled transaction must contain both fee fields",
+    );
+    return {
+      ...common,
+      type: "eip1559",
+      maxFeePerGas: filled.maxFeePerGas,
+      maxPriorityFeePerGas: filled.maxPriorityFeePerGas,
+    };
+  }
+  throw new Error(`Unsupported filled transaction type: ${String(filled.type)}`);
+}
+
+function signableTransaction(filled: ValidatedFilledTransaction) {
+  const base = {
+    chainId: filled.chainId,
+    nonce: filled.nonce,
+    to: filled.to,
+    data: filled.input,
+    value: filled.value,
+    gas: filled.gas,
+  } as const;
+  return filled.type === "legacy"
+    ? { ...base, gasPrice: filled.gasPrice }
+    : {
+        ...base,
+        type: filled.type,
+        maxFeePerGas: filled.maxFeePerGas,
+        maxPriorityFeePerGas: filled.maxPriorityFeePerGas,
+      };
+}
+
+function transactionDetails(
+  filled: ValidatedFilledTransaction,
+  estimatedGas?: string,
+) {
   return {
-    status: "success",
-    ...(data === undefined ? {} : { returnData: data }),
+    to: filled.to,
+    data: filled.input,
+    chainId: filled.chainId,
+    nonce: filled.nonce,
+    ...(estimatedGas === undefined ? {} : { estimatedGas }),
+    gasLimit: filled.gas.toString(),
+    ...(filled.type === "legacy"
+      ? { gasPrice: filled.gasPrice.toString() }
+      : {
+          maxFeePerGas: filled.maxFeePerGas.toString(),
+          maxPriorityFeePerGas: filled.maxPriorityFeePerGas.toString(),
+        }),
   };
 }
 
@@ -70,18 +209,18 @@ export function makeExecutionDeps(adminVariablePath: string): ExecutionDeps {
       throw new Error(`Unable to read ${label} secret variable`);
     }
     assert(
-      /^0x[0-9a-fA-F]{64}$/.test(value),
+      isHex(value) && value.length === 66,
       `${label} variable must contain a hex private key`,
     );
     try {
-      return privateKeyToAccount(value as Hex);
+      return privateKeyToAccount(value);
     } catch {
       throw new Error(`Invalid ${label} signing key`);
     }
   }
   const deps: ExecutionDeps = {
     async readJournal() {
-      return (await wmill.getState("f/aerodrome/__vote_state")) ?? {};
+      return parseJournal(await wmill.getState("f/aerodrome/__vote_state"));
     },
     async writeJournal(journal: Journal) {
       await wmill.setState(journal, "f/aerodrome/__vote_state");
@@ -99,23 +238,148 @@ type PreparedBatchVote = {
   key: string;
 };
 
+type VoteBatch = {
+  tokenIds: string[];
+  intent: TransactionIntent;
+};
+
+type Eip1559Fees = {
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+};
+
+function makeVoteBatch(
+  votes: readonly PreparedBatchVote[],
+  voteExecutor: Address,
+  adminAddress: Address,
+): VoteBatch {
+  const tokenIds = votes.map(({ allocation }) => allocation.tokenId);
+  const data = encodeFunctionData({
+    abi: VOTE_EXECUTOR_ABI,
+    functionName: "voteMany",
+    args: [
+      tokenIds.map(BigInt),
+      votes.map(({ allocation }) => allocation.pools),
+      votes.map(({ allocation }) => allocation.weights.map(BigInt)),
+    ],
+  });
+  return {
+    tokenIds,
+    intent: { from: adminAddress, to: voteExecutor, input: data, value: 0n },
+  };
+}
+
+async function quoteEip1559Fees(client: PublicClient): Promise<Eip1559Fees> {
+  const fees = await client.estimateFeesPerGas({
+    chain: base,
+    type: "eip1559",
+  });
+  assert(
+    fees.maxFeePerGas !== undefined &&
+      fees.maxPriorityFeePerGas !== undefined,
+    "Missing EIP-1559 fee quote for vote simulation",
+  );
+  return fees;
+}
+
+async function simulateVoteBatch(
+  client: PublicClient,
+  batch: VoteBatch,
+  fees: Eip1559Fees,
+): Promise<ExecutionSimulation> {
+  try {
+    const [simulationBlock] = await client.simulateBlocks({
+      blockTag: "latest",
+      blocks: [{
+        calls: [{
+          account: batch.intent.from,
+          to: batch.intent.to,
+          data: batch.intent.input,
+          value: batch.intent.value,
+          type: "eip1559",
+          maxFeePerGas: fees.maxFeePerGas,
+          maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+        }],
+      }],
+      validation: true,
+      traceTransfers: false,
+    });
+    const [simulationCall] = simulationBlock?.calls ?? [];
+    assert(simulationCall, "Invalid eth_simulateV1 response");
+    assert(
+      simulationCall.status === "success",
+      `eth_simulateV1 reverted${simulationCall.error ? `: ${simulationCall.error.message}` : ""}`,
+    );
+    assert(
+      typeof simulationCall.gasUsed === "bigint",
+      "eth_simulateV1 response is missing gasUsed",
+    );
+    return {
+      status: "success",
+      ...(isHex(simulationCall.data)
+        ? { returnData: simulationCall.data }
+        : {}),
+      gasUsed: simulationCall.gasUsed.toString(),
+      ...(simulationBlock.number === undefined
+        ? {}
+        : { blockNumber: simulationBlock.number.toString() }),
+    };
+  } catch (error) {
+    throw new Error(
+      `Vote batch simulation failed for NFTs ${batch.tokenIds.join(",")}: ${String(error)}`,
+    );
+  }
+}
+
+async function fillVoteBatch(
+  client: PublicClient,
+  batch: VoteBatch,
+  fees: Eip1559Fees,
+): Promise<ValidatedFilledTransaction> {
+  const { transaction } = await client.fillTransaction({
+    chain: base,
+    account: batch.intent.from,
+    to: batch.intent.to,
+    data: batch.intent.input,
+    value: batch.intent.value,
+    type: "eip1559",
+    maxFeePerGas: fees.maxFeePerGas,
+    maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+  });
+  return validateFilledTransaction(transaction, batch.intent);
+}
+
+type ExecutionContext = {
+  client: PublicClient;
+  snapshot: ExecutionSnapshot;
+  policy: Policy;
+  deps: ExecutionDeps;
+  voteExecutor: Address;
+  adminAddress: Address;
+  batchSize: number;
+  mode: ExecutionMode;
+};
+
+function executionMode(dryRun: boolean, deps: ExecutionDeps): ExecutionMode {
+  if (!dryRun) return "broadcast";
+  return deps.adminAccount ? "signed-simulation" : "unsigned-simulation";
+}
+
 /** Execute atomic VoteExecutor batches with retry-safe journaling. */
 async function executeBatched(
-  client: PublicClient,
-  snapshot: ExecutionSnapshot,
+  context: ExecutionContext,
   allocations: Allocation[],
-  policy: Policy,
-  dryRun: boolean,
-  deps: ExecutionDeps,
-  voteExecutor: VoteExecutorConfig["voteExecutor"],
-  adminAddress: VoteExecutorConfig["adminAddress"],
-  batchSize: number,
 ): Promise<ExecutionReport> {
-  const mode: ExecutionMode = dryRun
-    ? deps.adminAccount
-      ? "signed-simulation"
-      : "unsigned-simulation"
-    : "broadcast";
+  const {
+    client,
+    snapshot,
+    policy,
+    deps,
+    voteExecutor,
+    adminAddress,
+    batchSize,
+    mode,
+  } = context;
   const journal = mode === "broadcast" ? await deps.readJournal() : {};
   const report: ExecutionReport = { batches: [], skipped: [] };
   const reconciled = new Map<
@@ -210,54 +474,42 @@ async function executeBatched(
 
   for (let start = 0; start < prepared.length; start += batchSize) {
     const batch = prepared.slice(start, start + batchSize);
-    const tokenIds = batch.map(({ allocation }) => allocation.tokenId);
-    const encodedTokenIds = tokenIds.map(BigInt);
-    const pools = batch.map(({ allocation }) => allocation.pools);
-    const weights = batch.map(({ allocation }) => allocation.weights.map(BigInt));
-    const args = [encodedTokenIds, pools, weights] as const;
-    const data = encodeFunctionData({
-      abi: VOTE_EXECUTOR_ABI,
-      functionName: "voteMany",
-      args,
-    });
-
+    const voteBatch = makeVoteBatch(batch, voteExecutor, adminAddress);
+    const fees = await quoteEip1559Fees(client);
+    const simulation = await simulateVoteBatch(client, voteBatch, fees);
+    const validated = await fillVoteBatch(client, voteBatch, fees);
+    const { tokenIds } = voteBatch;
+    const gasDetails = transactionDetails(
+      validated,
+      simulation.gasUsed,
+    );
     if (mode === "unsigned-simulation") {
-      let simulation: ExecutionSimulation;
-      try {
-        simulation = await simulateTransaction(client, {
-          account: adminAddress,
-          to: voteExecutor,
-          data,
-          value: 0n,
-        });
-      } catch {
-        throw new Error(
-          `Vote batch simulation failed for NFTs ${tokenIds.join(",")}; no transaction sent`,
-        );
-      }
       report.batches.push({
         tokenIds,
         status: "simulated",
         source: "executed",
-        transaction: { to: voteExecutor, data },
+        transaction: { ...gasDetails },
         simulation,
       });
       continue;
     }
 
-    const gas = await client.estimateContractGas({
-      address: voteExecutor,
-      abi: VOTE_EXECUTOR_ABI,
-      functionName: "voteMany",
-      args,
-      account: adminAddress,
+    const pendingNonce = await client.getTransactionCount({
+      address: adminAddress,
+      blockTag: "pending",
     });
-    const gasLimit = (gas * 125n) / 100n;
-    const fees = await client.estimateFeesPerGas();
-    assert(fees.maxFeePerGas !== undefined, "Missing EIP-1559 fee quote");
+    const latestNonce = await client.getTransactionCount({
+      address: adminAddress,
+      blockTag: "latest",
+    });
     assert(
-      fees.maxPriorityFeePerGas !== undefined,
-      "Missing EIP-1559 priority fee quote",
+      pendingNonce === latestNonce && validated.nonce === pendingNonce,
+      "Admin has pending transactions or filled nonce is stale; retry after confirmation",
+    );
+    const beforeSign = await client.getBlock();
+    assert(
+      withinVotingWindow(Number(beforeSign.timestamp), snapshot),
+      "Voting window closed or not started",
     );
     if (!account) {
       assert(deps.adminAccount, "Execution requires admin account when signing");
@@ -268,62 +520,16 @@ async function executeBatched(
       );
     }
     assert(account, "Execution requires admin account when signing");
-    const nonce = await client.getTransactionCount({
-      address: adminAddress,
-      blockTag: "pending",
-    });
-    assert(
-      nonce ===
-        (await client.getTransactionCount({
-          address: adminAddress,
-          blockTag: "latest",
-        })),
-      "Admin has pending transactions; retry after confirmation",
-    );
-    const beforeSign = await client.getBlock();
-    assert(
-      withinVotingWindow(Number(beforeSign.timestamp), snapshot),
-      "Voting window closed or not started",
-    );
-    const transaction = {
-      chainId: 8453,
-      type: "eip1559",
-      nonce,
-      to: voteExecutor,
-      data,
-      value: 0n,
-      gas: gasLimit,
-      maxFeePerGas: fees.maxFeePerGas,
-      maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-    } as const;
-    const signed = await account.signTransaction(transaction);
+    const signed = await account.signTransaction(signableTransaction(validated));
     const hash = keccak256(signed);
 
     if (mode === "signed-simulation") {
-      let simulation: ExecutionSimulation;
-      try {
-        simulation = await simulateTransaction(client, {
-          account: adminAddress,
-          to: voteExecutor,
-          data,
-          value: 0n,
-          gas: gasLimit,
-          maxFeePerGas: fees.maxFeePerGas,
-          maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-        });
-      } catch {
-        throw new Error(
-          `Signed vote batch simulation failed for NFTs ${tokenIds.join(",")}; no transaction sent`,
-        );
-      }
       report.batches.push({
         tokenIds,
         status: "simulated",
         source: "executed",
         transaction: {
-          to: voteExecutor,
-          data,
-          nonce,
+          ...gasDetails,
           signedHash: hash,
         },
         simulation,
@@ -336,7 +542,7 @@ async function executeBatched(
         hash,
         owner: allocation.owner,
         sender: adminAddress,
-        nonce,
+        nonce: validated.nonce,
         status: "prepared",
         epoch: snapshot.epoch,
         tokenId: allocation.tokenId,
@@ -346,7 +552,7 @@ async function executeBatched(
       await client.sendRawTransaction({ serializedTransaction: signed });
     } catch {
       throw new Error(
-        `Broadcast uncertain for vote batch ${hash}; reconcile nonce ${nonce} before retry`,
+        `Broadcast uncertain for vote batch ${hash}; reconcile nonce ${validated.nonce} before retry`,
       );
     }
     let receipt;
@@ -369,7 +575,7 @@ async function executeBatched(
       tokenIds,
       status: "confirmed",
       source: "executed",
-      transaction: { to: voteExecutor, data, nonce },
+      transaction: { ...gasDetails },
       broadcast: {
         status: receipt.status,
         transactionHash: receipt.transactionHash,
@@ -411,6 +617,7 @@ export async function execute(
 ) {
   assert(typeof dryRun === "boolean", "dryRun must be a boolean");
   assert(deps, "Execution requires admin and journal adapters");
+  validatePolicy(policy);
   const voteExecutor = executorConfig.voteExecutor
     ? getAddress(executorConfig.voteExecutor)
     : undefined;
@@ -451,14 +658,16 @@ export async function execute(
     "VoteExecutor is not bound to the Aerodrome Base Voter",
   );
   return executeBatched(
-    client,
-    snapshot,
+    {
+      client,
+      snapshot,
+      policy,
+      deps,
+      voteExecutor,
+      adminAddress,
+      batchSize,
+      mode: executionMode(dryRun, deps),
+    },
     allocations,
-    policy,
-    dryRun,
-    deps,
-    voteExecutor,
-    adminAddress,
-    batchSize,
   );
 }

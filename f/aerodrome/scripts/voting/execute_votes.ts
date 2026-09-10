@@ -1,9 +1,9 @@
 import {
-  DEFAULT_POLICY,
   DEFAULT_EXECUTOR_BATCH_SIZE,
   clientFor,
   execute,
   makeExecutionDeps,
+  resolvePolicy,
   type Allocation,
   type ExecutionSnapshot,
   type Policy,
@@ -29,7 +29,7 @@ export async function main(
   executorBatchSize = DEFAULT_EXECUTOR_BATCH_SIZE,
 ) {
   const started = Date.now();
-  const policy = { ...DEFAULT_POLICY, ...options };
+  const policy = resolvePolicy(options);
   if (!/^0x[0-9a-fA-F]{40}$/.test(voteExecutor))
     throw new Error("voteExecutor is required and must be a valid EVM address");
   if (!/^0x[0-9a-fA-F]{40}$/.test(adminAddress))
@@ -48,6 +48,29 @@ export async function main(
       batchSize: executorBatchSize,
     },
   );
+  if (dryRun) {
+    console.log(
+      "[aerodrome] dry-run transaction report:\n" +
+        JSON.stringify(
+          {
+            batches: execution.batches.map((batch) => ({
+              tokenIds: batch.tokenIds,
+              status: batch.status,
+              transaction: {
+                estimatedGas: batch.transaction.estimatedGas,
+                gasLimit: batch.transaction.gasLimit,
+                nonce: batch.transaction.nonce,
+                signedHash: batch.transaction.signedHash,
+              },
+              simulation: batch.simulation,
+            })),
+            skipped: execution.skipped,
+          },
+          null,
+          2,
+        ),
+    );
+  }
   return {
     stage: "execute",
     elapsedMs: Date.now() - started,

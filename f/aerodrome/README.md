@@ -34,7 +34,7 @@ Flow 输入中的执行参数统一放在 `execution` 对象：`dryRun`、`voteE
 }
 ```
 
-`execution.dryRun` 默认开启且不会广播交易。未配置 `adminVariablePath` 时，它不读取签名密钥，直接用 `eth_call` 模拟已编码的 `voteMany` 交易；配置后会继续走 gas、nonce 和本地签名流程，再用 `eth_call` 模拟签名交易的执行参数，但仍不写执行状态、不提交交易。正式执行时 gas 估算会作为发送前的执行检查。只有当前区块时间严格位于快照的 `voteStart` 和 `voteEnd` 之间，才会执行交易模拟；窗口外返回 `outside_voting_window`，不伪称模拟成功。
+`execution.dryRun` 默认开启且不会广播交易。每个 batch 会先用 `eth_simulateV1` 模拟交易意图，检查成功后用 `eth_fillTransaction` 补齐 nonce、gas、fee 和 chainId，再校验 filled transaction；配置 `adminVariablePath` 时继续本地签名，dry-run 在签名后停止。执行结果会记录 simulation 返回的 `gasUsed` 和 filled transaction 的 `gasLimit`，并在 Windmill job 日志中打印。代码不再自行检查 Base 的固定 gas limit，最终限制由 simulation、fill 或实际广播阶段返回的节点错误决定。正式执行使用同一个 filled transaction 签名后发送，并保留 journal、广播和 receipt 处理。只有当前区块时间严格位于快照的 `voteStart` 和 `voteEnd` 之间，才会执行交易模拟；窗口外返回 `outside_voting_window`，不伪称模拟成功。
 
 无人值守执行统一使用最小权限 `VoteExecutor`：在 Base 部署本仓库的 `contracts/aerodrome/VoteExecutor.sol`，构造参数只填写 admin 地址；然后由 NFT owner 在 `VotingEscrow` 上对每个 tokenId 单独执行 `approve(executor, tokenId)`。owner 的私钥不进入 Windmill，Windmill 只保存 admin 的加密 Secret Variable。执行器没有 fallback、任意 call 或升级入口，只能通过 `voteMany` 将固定格式的投票转发到固定的 Aerodrome Voter。admin 还可以轮换 admin 权限并恢复误转入执行器的 ERC20/ETH；admin 私钥泄漏时，攻击者能影响投票和执行器内已有资产，因此应使用专用 admin 地址。
 
@@ -92,7 +92,7 @@ reward(p) × (fixed(p) + x(p))
 
 求出合计 `x(p)` 后，代码把它转换成 `1e12` 精度的相对权重。例如 `600000000000` 和 `400000000000` 表示 60/40，而不是 6000 和 4000 个 veAERO。每个 NFT 的 voteMany 参数都使用这组相对权重。Aerodrome Voter 会按该 NFT 自己的 `balanceOfNFT` 计算实际池子票数，因此 power 为 1 和 power 为 99 的 NFT 会分别贡献 1% 和 99% 的合计分配。代码还检查整数舍入后每个 NFT 对每个选中池子仍有正票，避免小 NFT 静默丢失某个池子的票。
 
-`optimize_votes` 返回的 `allocations` 只是 tokenId、池子、相对权重和收益估计组成的投票计划。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段只接收区块、epoch 和投票起止时间等执行元数据，并用同一 epoch 的新状态重新组装 `voteMany` calldata，模拟并核验 NFT 归属、投票权和投票窗口。`execute_votes` 的 `execution` 返回值按批次列出 `batches`，每个批次包含交易参数以及 `simulation` 或 `broadcast` 结果；`skipped` 单独记录每个 NFT 的跳过原因。dry-run 的 `signedHash` 仅表示本地签名结果，不代表已经上链。
+`optimize_votes` 返回的 `allocations` 只是 tokenId、池子、相对权重和收益估计组成的投票计划。它不签名、不广播，也不读取私钥；这些动作只在 `execute_votes` 阶段发生。执行阶段只接收区块、epoch 和投票起止时间等执行元数据，并用同一 epoch 的新状态重新组装 `voteMany` calldata，模拟并核验 NFT 归属、投票权和投票窗口。`execute_votes` 的 `execution` 返回值按批次列出 `batches`，每个批次包含 filled transaction 的 `chainId`、`nonce`、gas/fee 字段、`estimatedGas`、`gasLimit` 以及 `simulation` 或 `broadcast` 结果；`skipped` 单独记录每个 NFT 的跳过原因。dry-run 的 `signedHash` 仅表示本地签名结果，不代表已经上链。
 
 候选池预筛默认关闭（两个 `candidate*` 参数均为 0），因此默认行为不会因候选阈值改变。需要缩小候选噪音时，可在 `options` 中配置 `candidateMinVotes` 和 `candidateMinRewardPerVoteUsd`；二者同时启用时，仅过滤低票且低收益密度的池子。`excludedPools` 可用于手动排除已知异常或不希望投票的池子，这些池子不会进入候选集合，也不会被 fallback 重新加入。内部 `maxGain` 仍用于 fallback 排序和组合优化，但不再作为用户可配置的预筛阈值。候选预筛之后，最终结果还会按 `minSelectedShare`（默认 0.005，即 0.5%）删除低分配池并重新求解；设置为 0 时关闭经济阈值，但仍会删除低于 `1e-12` 相对权重精度的池子。预筛会自动保留足够满足 `maxShare` 的池子；阈值过严不会让约束失效，而是按内部潜在收益上界回填。建议先观察 `optimize.metrics`，再逐步提高阈值。
 

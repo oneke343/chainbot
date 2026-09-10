@@ -102,7 +102,7 @@ schema:
       properties:
         dryRun:
           type: boolean
-          description: 模拟投票且不广播；若配置 admin 密钥，dry-run 会本地签名后再用 eth_call 模拟。为 false 时才会广播交易。
+          description: 先用 eth_simulateV1 模拟投票意图，再用 eth_fillTransaction 补齐交易字段；dry-run 会继续本地签名但不会广播，并报告 simulation gasUsed、filled gasLimit 和 Base 上限。为 false 时才会广播交易。
           default: true
         voteExecutor:
           type: string

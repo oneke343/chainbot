@@ -1,9 +1,10 @@
 summary: Simulate and execute veAERO votes
 description: Revalidates the snapshot and NFT state, simulates each vote batch,
   and when an admin secret is configured, dry-run also signs locally and
-  simulates the signed transaction without broadcasting. When dryRun is false,
-  it broadcasts, confirms, and journals each transaction. The admin secret is
-  the only signing secret read; the wrapper forwards only atomic
+  simulates the signed transaction without broadcasting. Dry-run reports the
+  simulated gas used and filled transaction gas limit. When dryRun is false, it
+  broadcasts, confirms, and journals each transaction. The admin secret is the
+  only signing secret read; the wrapper forwards only atomic
   VoteExecutor.voteMany operations; owner signing secrets are never read.
 lock: '!inline f/aerodrome/scripts/voting/execute_votes.script.lock'
 kind: script
@@ -20,7 +21,7 @@ schema:
     adminVariablePath:
       type: string
       description: Windmill Secret Variable path containing the admin private key;
-        when set, dry-run signs locally for a final eth_call simulation but
+        when set, dry-run runs eth_simulateV1, fills and signs the transaction,
         never broadcasts.
       default: ''
       originalType: string
@@ -35,9 +36,8 @@ schema:
       originalType: resource[]
     dryRun:
       type: boolean
-      description: Simulate and report transactions without broadcasting when true; if
-        adminVariablePath is set, also sign locally and simulate the signed
-        transaction.
+      description: Run eth_simulateV1 and report the filled transaction without
+        broadcasting when true; if adminVariablePath is set, also sign locally.
       default: true
     executorBatchSize:
       type: integer
@@ -54,7 +54,7 @@ schema:
       format: resource-partial
     rpcUrl:
       type: string
-      description: Base JSON-RPC URL used for simulation, fee estimation, and
+      description: Base JSON-RPC URL used for eth_simulateV1, transaction filling, and
         transaction confirmation.
       default: https://base-rpc.publicnode.com
       originalType: string
