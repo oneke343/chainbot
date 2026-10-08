@@ -126,7 +126,10 @@ Hub 的 premium/deficit 仍需链上对照。`suppliable` / `borrowable` 保留 
 本 Flow 只返回 MonitorOutput；由现有 Root Flow 接 AlertPolicy 和 Destination 发送通知。
 
 `u/oneke/aave_v4_market_params_monitor` 是接入 Telegram 的 Root Flow；同名 schedule 每分钟
-检查 Ethereum（`chain_ids: [1]`）的全部 reserves，并跳过重叠运行。实例只启用 Supply/Borrow
+检查 schedule 中固定配置网络的全部 reserves，并跳过重叠运行。`chain_ids` 写死为
+`[1, 10, 5042, 8453, 43114]`，分别对应 Ethereum、OP Mainnet、Arc、Base 和 Avalanche，
+这是 2026-10-08 核对的 Aave V4 API 主网列表；运行时不发现网络，新网络需手动更新参数。
+实例只启用 Supply/Borrow
 Cap 变更通知，关闭暂停/Oracle 告警，未配置使用率阈值。通知复用 `u/oneke/yeap-bot` 和现有
 Telegram chat。首次观察仅建立 cap 基线；其他 market 参数尚未纳入该 schedule。
 

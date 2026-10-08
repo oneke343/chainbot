@@ -1,5 +1,5 @@
 summary: Check Aave V4 market cap changes every minute
-description: Monitor all Ethereum Aave V4 reserves for supply/borrow cap changes
+description: Monitor Aave V4 reserves on the configured mainnets for supply/borrow cap changes
   and send Telegram alerts. First observations establish cap baselines.
 schedule: '0 */1 * * * *'
 timezone: Asia/Shanghai
@@ -9,7 +9,13 @@ is_flow: true
 script_path: u/oneke/aave_v4_market_params_monitor
 args:
   api: $res:f/aave/resources/aave_v4
-  chain_ids: [1]
+  # Aave V4 MAINNET_ONLY list verified on 2026-10-08; update manually for new networks.
+  chain_ids:
+    - 1 # Ethereum
+    # - 10 # OP Mainnet
+    - 5042 # Arc
+    - 8453 # Base
+    - 43114 # Avalanche
   spoke_ids: []
   reserve_ids: []
   default_rules:

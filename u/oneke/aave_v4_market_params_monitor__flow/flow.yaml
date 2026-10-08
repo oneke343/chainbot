@@ -1,5 +1,5 @@
 summary: Monitor Aave V4 market cap changes
-description: Poll Ethereum Aave V4 reserves every minute and send supply/borrow
+description: Poll the configured Aave V4 networks every minute and send supply/borrow
   cap change alerts to Telegram.
 value:
   modules:
