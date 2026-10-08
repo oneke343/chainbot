@@ -1,5 +1,6 @@
-summary: Aave V4 market risk
-description: Monitor Aave V4 liquidity caps and halted Spokes.
+summary: Aave V4 asset cap and market risk
+description: Monitor individual reserve cap usage and supply/borrow cap changes. The
+  first successful observation establishes the cap baseline without a change alert.
 value:
   modules:
     - id: source
@@ -17,10 +18,12 @@ value:
           inputs: {type: javascript, expr: results.source}
           default_rules: {type: javascript, expr: 'flow_input.default_rules ?? {}'}
           market_rules: {type: javascript, expr: 'flow_input.market_rules ?? {}'}
+          spoke_ids: {type: javascript, expr: 'flow_input.spoke_ids ?? []'}
+          reserve_ids: {type: javascript, expr: 'flow_input.reserve_ids ?? []'}
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
-  order: [api, chain_ids, default_rules, market_rules]
+  order: [api, chain_ids, spoke_ids, reserve_ids, default_rules, market_rules]
   properties:
     api: {type: object, format: resource-graphql, default: '$res:f/aave/resources/aave_v4'}
     chain_ids:
@@ -28,10 +31,23 @@ schema:
       minItems: 1
       uniqueItems: true
       items: {type: integer, minimum: 1}
+    spoke_ids:
+      type: array
+      default: []
+      uniqueItems: true
+      items: {type: string, minLength: 1}
+      description: Optional Aave Spoke IDs. Empty selects all Spokes on the requested chains.
+    reserve_ids:
+      type: array
+      default: []
+      uniqueItems: true
+      items: {type: string, minLength: 1}
+      description: Optional reserve IDs within the selected Spokes. Empty selects all assets.
     default_rules:
       $ref: '#/$defs/rules'
     market_rules:
       type: object
+      description: Override thresholds by reserve ID or full chain / hub / spoke / asset name.
       additionalProperties:
         $ref: '#/$defs/rules'
   required: [api, chain_ids]

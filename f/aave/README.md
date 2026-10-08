@@ -85,7 +85,45 @@ Aave V3/V4 都显式实现 `HealthPositionAdapter`。未来其他协议接入时
 - `aave_v3_liquidations` 按 V3 Pool 地址、chain ID 和用户查询最近 50 条真实 liquidation call。
 - `aave_v4_liquidations` 一次查询指定网络上某用户最近 50 条 `LIQUIDATED` activity。
 - `aave_v3_market_risk` 查询各 reserve 的可用流动性、利用率、Supply/Borrow Cap、冻结和暂停。
-- `aave_v4_market_risk` 查询 Spoke 的 USD supplied/borrowed 和聚合 Supply/Borrow Cap。
+- `aave_v4_market_risk` 查询 reserve 的 token supplied/borrowed、Supply/Borrow Cap、可存入/可借数量和操作状态。
+
+### Aave V4 资产 Cap 监控
+
+复用 `f/aave/flows/aave_v4_market_risk`，输入 `chain_ids` 指定网络；可选的 `spoke_ids` 和
+`reserve_ids` 用 API 返回的 ID 筛选 market 和资产，空数组表示全选。配置的 ID 未返回时失败，
+避免将不存在的监控对象当作正常。
+
+Supply/Borrow Cap 变更始终启用。每个 reserve 的两类 cap 独立比较原始 token 单位；增加、
+减少、变为零、变为无限额度都产生消息，包含资产、Hub/Spoke 和变更前后值。首次成功读取
+只建立 cap 基线；新增 reserve 也单独建立基线。存借余额或币价变化不会触发 cap 变更。
+失败不更新状态；暂时未返回或未选中的 reserve 保留最后成功读取的基线。
+
+Rules 信赖 Aave GraphQL 查询返回的数据类型，只做字段映射和数值转换，不重复校验地址、
+响应结构或 token 精度。用户配置和持久化 cap 基线仍会校验。
+
+满额预警通过 `default_rules` 配置，例如：
+
+```json
+{
+  "max_supply_cap_used_percent": 95,
+  "max_borrow_cap_used_percent": 95
+}
+```
+
+严格超过阈值时触发，持续命中去重，回到阈值以内后重新允许触发。`market_rules` 可以按
+reserve ID 或完整 `chain / hub / spoke / asset` 名称覆盖阈值；旧 Spoke 汇总 ID 的覆盖值
+需要改为 reserve ID。既有实例升级后首次运行会建立资产 cap 基线。
+
+金额和 cap 比较使用 BigInt，持久化为整数字符串；使用率显示保留六位小数，但阈值判断
+使用精确整数计算。Cap 为零时表示没有新增额度，跳过百分比判断；无限额度使用 Hub 的
+`uint40` 最大值哨兵，剩余额度记为 null。有限 cap 的占用允许超过 100%，剩余下限为零。
+
+API 的 supplied/borrowed 用于使用率和剩余估算；不是独立链上验算，借款占用是否完整覆盖
+Hub 的 premium/deficit 仍需链上对照。`suppliable` / `borrowable` 保留 API 给出的实际可用量，
+与 `supply_cap_remaining` / `borrow_cap_remaining` 分别输出，避免把 cap 剩余当成可执行额度。
+`liquidity_usd` 保留 supplied USD 减 borrowed USD 的估算，不能当成共享 Hub 的实际可用流动性。
+
+本 Flow 只返回 MonitorOutput；由现有 Root Flow 接 AlertPolicy 和 Destination 发送通知。
 
 清算 Flow 首次运行默认只建立基线，避免安装后补发全部历史记录。Aave V3 API 的历史接口要求
 单个 Pool 地址，因此一个 V3 清算 Monitor 实例对应一个部署。Aave V3/V4 当前公开响应没有足够的

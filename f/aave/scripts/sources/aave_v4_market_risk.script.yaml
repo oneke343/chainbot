@@ -1,4 +1,4 @@
-summary: Query Aave V4 Spoke risk metrics
+summary: Query Aave V4 reserve caps and risk metrics
 description: ''
 lock: ''
 kind: script

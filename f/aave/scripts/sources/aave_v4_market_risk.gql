@@ -1,11 +1,23 @@
 query AaveV4MarketRisk($chain_ids: [ChainId!]!) {
-  spokes(request: {query: {chainIds: $chain_ids}}) {
-    id name address chain {chainId name}
-    summary(currency: USD) {
-      totalBorrowed {value}
-      totalBorrowCap {value}
-      totalSupplied {value}
-      totalSupplyCap {value}
+  reserves(request: {query: {chainIds: $chain_ids}}) {
+    id chain {chainId name}
+    spoke {id name address}
+    asset {
+      onchainAssetId
+      hub {id name address}
+      underlying {address info {symbol decimals}}
     }
+    summary {
+      supplied {amount {onChainValue decimals} exchange {value}}
+      borrowed {amount {onChainValue decimals} exchange {value}}
+      suppliable {amount {onChainValue decimals}}
+      borrowable {amount {onChainValue decimals}}
+    }
+    settings {
+      supplyCap {amount {onChainValue decimals}}
+      borrowCap {amount {onChainValue decimals}}
+    }
+    status {paused frozen active}
+    canSupply canBorrow
   }
 }

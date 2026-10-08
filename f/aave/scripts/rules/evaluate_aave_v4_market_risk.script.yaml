@@ -1,4 +1,4 @@
-summary: Evaluate Aave V4 Spoke risk and save MonitorState
+summary: Evaluate Aave V4 reserve cap changes and risk and save MonitorState
 description: ''
 lock: '!inline f/aave/scripts/rules/evaluate_aave_v4_market_risk.script.lock'
 kind: script
@@ -15,13 +15,23 @@ schema:
       default: null
       format: resource-result
       properties:
-        spokes:
-          type: object
-          description: ''
-          format: resource-array
+        reserves:
+          type: array
+          items:
+            type: object
     market_rules:
       type: object
       default: {}
       format: resource-record
+    spoke_ids:
+      type: array
+      default: []
+      items:
+        type: string
+    reserve_ids:
+      type: array
+      default: []
+      items:
+        type: string
   required:
     - inputs

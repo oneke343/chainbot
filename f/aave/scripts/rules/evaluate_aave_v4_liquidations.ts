@@ -6,12 +6,16 @@ import {
   type LiquidationEvent, type LiquidationState,
 } from "../../../chain_sentinel/lib/liquidation-events.ts";
 
-type Result = { activities?: { items?: Array<{
-  __typename?: string; id?: string; user?: string; timestamp?: string; txHash?: string;
-  chain?: { chainId?: number; name?: string }; spoke?: { address?: string; name?: string };
-  collateral?: { amount?: { value?: string }; token?: { info?: { symbol?: string } } };
-  debt?: { amount?: { value?: string }; token?: { info?: { symbol?: string } } };
-}>; pageInfo?: { next?: string | null } } };
+type Result = {
+  activities?: {
+    items?: Array<{
+      __typename?: string; id?: string; user?: string; timestamp?: string; txHash?: string;
+      chain?: { chainId?: number; name?: string }; spoke?: { address?: string; name?: string };
+      collateral?: { amount?: { value?: string }; token?: { info?: { symbol?: string } } };
+      debt?: { amount?: { value?: string }; token?: { info?: { symbol?: string } } };
+    }>; pageInfo?: { next?: string | null }
+  }
+};
 
 export function normalizeAaveV4Liquidations(result: Result, user: string) {
   const page = result?.activities;
