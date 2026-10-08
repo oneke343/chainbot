@@ -60,3 +60,5 @@ schema:
         max_utilization_percent: {type: number, minimum: 0}
         max_supply_cap_used_percent: {type: number, minimum: 0}
         max_borrow_cap_used_percent: {type: number, minimum: 0}
+        alert_paused: {type: boolean}
+        alert_oracle_warnings: {type: boolean}

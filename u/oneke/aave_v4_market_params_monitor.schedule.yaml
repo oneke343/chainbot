@@ -1,0 +1,23 @@
+summary: Check Aave V4 market cap changes every minute
+description: Monitor all Ethereum Aave V4 reserves for supply/borrow cap changes
+  and send Telegram alerts. First observations establish cap baselines.
+schedule: '0 */1 * * * *'
+timezone: Asia/Shanghai
+cron_version: v2
+enabled: true
+is_flow: true
+script_path: u/oneke/aave_v4_market_params_monitor
+args:
+  api: $res:f/aave/resources/aave_v4
+  chain_ids: [1]
+  spoke_ids: []
+  reserve_ids: []
+  default_rules:
+    alert_paused: false
+    alert_oracle_warnings: false
+  market_rules: {}
+  severity: info
+  telegram_auth: $res:u/oneke/yeap-bot
+  telegram_chat_id: '-1004252768572'
+no_flow_overlap: true
+ws_error_handler_muted: false

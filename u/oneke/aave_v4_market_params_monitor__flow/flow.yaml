@@ -1,0 +1,87 @@
+summary: Monitor Aave V4 market cap changes
+description: Poll Ethereum Aave V4 reserves every minute and send supply/borrow
+  cap change alerts to Telegram.
+value:
+  modules:
+    - id: monitor
+      summary: Read asset caps and detect changes
+      value:
+        type: flow
+        path: f/aave/flows/aave_v4_market_risk
+        input_transforms:
+          api: {type: javascript, expr: flow_input.api}
+          chain_ids: {type: javascript, expr: flow_input.chain_ids}
+          spoke_ids: {type: javascript, expr: 'flow_input.spoke_ids ?? []'}
+          reserve_ids: {type: javascript, expr: 'flow_input.reserve_ids ?? []'}
+          default_rules: {type: javascript, expr: flow_input.default_rules}
+          market_rules: {type: javascript, expr: 'flow_input.market_rules ?? {}'}
+    - id: alert_policy
+      summary: Build cap change alerts
+      value:
+        type: script
+        path: f/chain_sentinel/scripts/alert_policies/matched_output
+        input_transforms:
+          monitor_output: {type: javascript, expr: results.monitor}
+          severity: {type: javascript, expr: flow_input.severity}
+    - id: send_to_telegram
+      summary: Send cap change alerts to Telegram
+      value:
+        type: script
+        path: f/chain_sentinel/scripts/destinations/send_telegram
+        input_transforms:
+          auth: {type: javascript, expr: flow_input.telegram_auth}
+          chat_id: {type: javascript, expr: flow_input.telegram_chat_id}
+          messages: {type: javascript, expr: results.alert_policy.messages}
+      retry:
+        exponential:
+          attempts: 3
+          multiplier: 2
+          random_factor: 20
+          seconds: 2
+      timeout: {type: static, value: 30}
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order: [api, chain_ids, spoke_ids, reserve_ids, default_rules, market_rules, severity, telegram_auth, telegram_chat_id]
+  properties:
+    api: {type: object, format: resource-graphql}
+    chain_ids:
+      type: array
+      minItems: 1
+      uniqueItems: true
+      items: {type: integer, minimum: 1}
+    spoke_ids:
+      type: array
+      default: []
+      uniqueItems: true
+      items: {type: string, minLength: 1}
+    reserve_ids:
+      type: array
+      default: []
+      uniqueItems: true
+      items: {type: string, minLength: 1}
+    default_rules:
+      $ref: '#/$defs/rules'
+      description: Use alert_paused=false and alert_oracle_warnings=false for cap-change-only monitoring.
+    market_rules:
+      type: object
+      default: {}
+      additionalProperties:
+        $ref: '#/$defs/rules'
+    severity:
+      type: string
+      enum: [info, warning, critical]
+    telegram_auth: {type: object, format: resource-telegram}
+    telegram_chat_id: {type: string, minLength: 1}
+  required: [api, chain_ids, default_rules, severity, telegram_auth, telegram_chat_id]
+  $defs:
+    rules:
+      type: object
+      additionalProperties: false
+      properties:
+        min_liquidity_usd: {type: number, minimum: 0}
+        max_utilization_percent: {type: number, minimum: 0}
+        max_supply_cap_used_percent: {type: number, minimum: 0}
+        max_borrow_cap_used_percent: {type: number, minimum: 0}
+        alert_paused: {type: boolean}
+        alert_oracle_warnings: {type: boolean}
