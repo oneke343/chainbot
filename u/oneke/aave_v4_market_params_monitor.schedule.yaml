@@ -19,7 +19,7 @@ args:
   telegram_auth: $res:u/oneke/yeap-bot
   telegram_chat_id: '-1004252768572'
 cron_version: v2
-enabled: false
+enabled: true
 is_flow: true
 no_flow_overlap: true
 schedule: 0 */1 * * * *
