@@ -47,16 +47,3 @@ export type ContractInfo = { addr: Address; codeHash: Hex };
 export type HubGraph = { hub: Hub; spokes: Spoke[]; treasuries: Treasury[]; tokenizations: Tokenization[]; otherSpokes: ContractInfo[]; authorities: Authority[] };
 export type NetworkParams = Record<Address, HubGraph>;
 export type Snapshots = Record<string, NetworkParams>;
-export type Baseline = Snapshots;
-
-export type ParamValue = string | number | boolean | null;
-export type ParamChange = {
-  chain_id: number; path: string; name: string; change: "added" | "updated" | "removed";
-  fields: Array<{ parameter: string; before: ParamValue; after: ParamValue }>;
-};
-export type ParamsMonitorOutput = {
-  matched: boolean;
-  messages: Array<{ title: string; description: string; fields: { chain_id: number; finding_kind: "market_params_change" } }>;
-  fields: { changes: ParamChange[]; observed_objects: number; message_count: number };
-};
-export type Evaluation = { output: ParamsMonitorOutput; nextBaseline: Baseline };

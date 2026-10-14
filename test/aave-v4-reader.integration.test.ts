@@ -5,9 +5,10 @@ import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
+import jsonpatch from "fast-json-patch";
 import { createPublicClient, http, encodeFunctionData, getAddress, parseAbi, type Address, type Hex } from "viem";
 import { main as readHubs } from "../f/aave/scripts/sources/aave_v4_read_hubs.ts";
-import { main as rule } from "../f/aave/scripts/rules/evaluate_aave_v4_market_params.ts";
+import { main as diff } from "../f/chain_sentinel/rules/diff.ts";
 import { rpcMulticall } from "../f/aave/lib/multicall.ts";
 import { READER_ABI, READER_BYTECODE } from "../f/aave/lib/market-params-reader-artifact.ts";
 
@@ -112,7 +113,6 @@ test("Reader-shaped Source uses one latest multicall and detects changes on a lo
     assert.equal(decoded.hub.assets[0].registeredSpokes[0].config.addCap, 100);
     assert.equal(decoded.hub.assets[0].config.reinvestmentController, "0x0000000000000000000000000000000000000000");
     assert.doesNotThrow(() => JSON.stringify(graph));
-    const first = await rule({ "1": graph });
     async function set(functionName: string, value: unknown) {
       await transact(encodeFunctionData({ abi: artifact.abi, functionName, args: [value] }), address);
     }
@@ -126,10 +126,12 @@ test("Reader-shaped Source uses one latest multicall and detects changes on a lo
     const fresh = await readHubs(url, [address, secondAddress]);
     assert.equal(fresh[address].hub.assets[0].registeredSpokes[0].config.addCap, 200, "latest sees the new cap without pinning");
     assert.equal(graph[address].hub.assets[0].registeredSpokes[0].config.addCap, 100, "previous snapshot is unchanged");
-    const evaluation = await rule({ "1": fresh }, first.nextBaseline);
-    for (const suffix of ["registeredSpokes." + getAddress(address) + ".config", "dynamicConfigs.0", ".proxy", ".members." + getAddress(owner), ".treasuries." + getAddress(hub.treasuries[0].addr)])
-      assert.ok(evaluation.output.fields.changes.some(change => change.path.endsWith(suffix)), suffix);
-    assert.ok(evaluation.output.fields.changes.some(change => change.fields.some(field => field.parameter === "role" && field.after === "0")));
+    const previous = { "1": graph }, current = { "1": fresh };
+    const patch = await diff(previous, current);
+    for (const path of ["/registeredSpokes/", "/dynamicConfigs/0/", "/proxy/", "/members/", "/treasuries/"])
+      assert.ok(patch.some(change => change.path.includes(path)), path);
+    assert.ok(patch.some(change => change.op === "replace" && change.path.endsWith("/role") && change.value === "0"));
+    assert.deepEqual(jsonpatch.applyPatch(structuredClone(previous), patch, true).newDocument, current);
     await set("setFailDynamic", true);
     await assert.rejects(readSpoke());
     await assert.rejects(readHubs(url, [secondAddress, address]), /dynamic read failed|revert/);

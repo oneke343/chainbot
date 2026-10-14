@@ -97,8 +97,8 @@ Rules 信赖 Aave API 格式，金额使用 BigInt，阈值判断保留整数精
 零 cap 与无限 cap 不做百分比判断；余额与流动性仍是 API 观测／估算。
 
 **配置变更已经拆出**，market risk 不再保留 cap 基线或发送 cap-change 消息。
-协议配置变化由独立的 Source 和 Rule 实现，目标 Root Flow 为
-`u/oneke/aave_v4_market_params_monitor`。
+配置采集由 `u/oneke/sources/aave_v4_configuration` 调用采集 WAC，
+变更监控由 `u/oneke/monitors/aave_v4_configuration_change` 编排。
 结果直接采用 Reader 的对象图：`Record<chainId, Record<hubAddress, HubGraph>>`。
 `HubGraph` 保留 `hub`、`spokes`、`treasuries`、`tokenizations`、`otherSpokes`、`authorities`，
 实体集合保留 Reader 数组，不转换成另一套领域对象，不跨 Hub 合并共享配置。
@@ -109,12 +109,12 @@ Rules 信赖 Aave API 格式，金额使用 BigInt，阈值判断保留整数精
 查询 Hub 地址及 chain ID，再直接遍历 `Object.entries(rpc_urls)`，按网络筛选 Hub，
 通过 `Promise.all` 并行调用各网络的 `read_hubs` 子任务。每个网络仍由 multicall 逐个执行 `readHub`。
 `read_hubs` 返回 `NetworkParams`（`hub_address → HubGraph`），不接收 chain ID。
-Workflow 按对应的 chain ID 聚合各网络结果，直接返回完整快照；Root Flow 将结果传给 Rule。
+Workflow 按对应的 chain ID 聚合各网络结果，直接返回完整快照。
 编排入口使用 Bun runtime，以初始化 Workflow as Code 执行上下文。
 GraphQL 和网络读取分别是 Windmill 子任务，具备独立日志和 checkpoint；
 重放时只重建确定性的聚合对象，已完成的任务结果从 checkpoint 恢复。
 没有单独的合并脚本、prepare_networks、pin_block、assembler 或 normalization 脚本。
-网络由 schedule 的 RPC 映射指定，不自动发现。
+网络由配置 Source Flow 的静态 RPC 映射指定，不自动发现。
 
 每个网络使用现有 Multicall3 `0xca11bde05977b3631167028862be2a173976ca11`，
 在一个 `eth_call` 中调用各 Hub 的 `readHub`；使用 `blockTag=latest`，不额外查询 chain ID 或区块号。
@@ -131,15 +131,14 @@ viem 解码的 uint8 到 uint48 保留 number；更大的 bigint 仅在 JSON 输
 不能枚举的 manager 和第三方合约内部参数不采集；Spoke 的全部 reserve 均保留，
 不递归扩展 API 未列出的 Hub。
 
-Rule `evaluate_aave_v4_market_params.main(current, previous)` 是纯比较，返回 `{output, nextBaseline}`。
-Root Flow 读取 baseline、调用采集 Flow 和 Rule、应用 AlertPolicy、按需发送，然后保存 baseline。
-首次 `previous=null` 静默建立基线；显式空对象表示已有空基线，新增对象会报警。
-Reader 实体数组按各自 ID 比较，换序不报警；历史动态配置按数组下标（版本 key）比较。
-差异路径使用实体 ID，而非枚举位置。省略网络保留其基线，已观察空网络报告移除。
-采集或通知失败不推进 baseline；通知成功而保存失败时，重跑可能重复通知。
-完整差异保存在 Rule 结果和 MonitorState，AlertPolicy 仅接收轻量统计。
-Schedule 每分钟运行，`rpc_urls` 明确列出 Ethereum、Arc、Base、Avalanche，
-通过 `no_flow_overlap` 防止定时重叠。手动运行 Root Flow 也写同一状态，应避免并发。
+变更监控先通过 `f/chain_sentinel/sources/previous` 读取 Source 最近成功 job，
+再执行配置 Source。没有历史 job 时仅采集，不发通知。
+有历史值时调用 `f/chain_sentinel/rules/diff` 比较 `previous.result` 与当前快照，
+生成包含旧值的 JSON Patch；对象字段顺序忽略，数组按下标比较。
+非空 Patch 经 inline Handlebars 模板渲染，再交给 notification Flow。
+历史来自 Source job，不再维护独立 baseline 或 MonitorState；成功采集即进入历史，
+即使后续比较或通知失败也不会撤回该次 Source 结果。
+配置 Source 的 RPC 映射列出 Ethereum、Arc、Base、Avalanche。
 
 本地验证：`bun run test`、`bun run check`，合约与 Anvil 验证见
 [Reader 文档](../../contracts/aave-v4/README.md)。无状态只读采集预览：

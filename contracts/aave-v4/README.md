@@ -37,4 +37,4 @@ bun run check
 
 生成文件包含 typed ABI、creation bytecode 和 runtime bytecode；`--check` 核对可重复构建。
 Foundry 验证对象图、标准接口分类、历史配置、权限、代理和失败边界。
-Anvil 验证 Source 多 Hub 一个 `eth_call`、latest 更新、state override、Reader 原始结构、读取→Rule 与单 Hub 失败传播；独立 RPC 工具仍验证指定区块读取，测试交易仅发送临时本地 EVM。正常测试跳过 Foundry 依赖的集成测试。
+Anvil 验证 Source 多 Hub 一个 `eth_call`、latest 更新、state override、Reader 原始结构、读取→JSON Patch diff 与单 Hub 失败传播；独立 RPC 工具仍验证指定区块读取，测试交易仅发送临时本地 EVM。正常测试跳过 Foundry 依赖的集成测试。
