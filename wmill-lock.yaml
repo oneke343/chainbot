@@ -47,6 +47,7 @@ locks:
   f/chain_sentinel/scripts/sources/graphql: e4ea869e7408bf07869211da3421bed6b90bf3313ab1039c75026f8800da963c
   f/chain_sentinel/scripts/sources/http_json: 6f3e6bf3415c7c726ca789bd7fe12d38f9fbf693c969bca8e68e1a94a35e1d44
   f/chain_sentinel/sources/previous: 6b21f7aabc79de34aca00971fec16eecd2b11b90861f363e7c8f2c0c3ee9b98b
+  f/handlebars/render: 63959206d3d589ac04d773f1d697528df3d0b70f58aaad5c239fd2e00a1bae22
   f/morpho/flows/morpho_health__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
   f/morpho/flows/morpho_liquidations__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
   f/morpho/flows/morpho_market_risk__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
