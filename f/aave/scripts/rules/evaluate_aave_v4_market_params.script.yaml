@@ -1,6 +1,6 @@
 summary: Compare Aave V4 Reader graphs
 description: Pure comparison of chain ID to Hub address to HubGraph snapshots.
-lock: "!inline f/aave/scripts/rules/evaluate_aave_v4_market_params.script.lock"
+lock: '!inline f/aave/scripts/rules/evaluate_aave_v4_market_params.script.lock'
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
@@ -9,9 +9,12 @@ schema:
     current:
       type: object
       additionalProperties: true
+      default: null
+      format: resource-snapshots
     previous:
       type: object
       additionalProperties: true
       default: null
+      format: resource-baseline
   required:
     - current
