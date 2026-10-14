@@ -87,51 +87,66 @@ Aave V3/V4 都显式实现 `HealthPositionAdapter`。未来其他协议接入时
 - `aave_v3_market_risk` 查询各 reserve 的可用流动性、利用率、Supply/Borrow Cap、冻结和暂停。
 - `aave_v4_market_risk` 查询 reserve 的 token supplied/borrowed、Supply/Borrow Cap、可存入/可借数量和操作状态。
 
-### Aave V4 资产 Cap 监控
+### Aave V4 market risk 与 market params changes
 
-复用 `f/aave/flows/aave_v4_market_risk`，输入 `chain_ids` 指定网络；可选的 `spoke_ids` 和
-`reserve_ids` 用 API 返回的 ID 筛选 market 和资产，空数组表示全选。配置的 ID 未返回时失败，
-避免将不存在的监控对象当作正常。
+`f/aave/flows/aave_v4_market_risk` 负责流动性、利用率、cap 使用率和操作风险阈值。
+Cap 使用率通过 `max_supply_cap_used_percent` / `max_borrow_cap_used_percent` 配置，
+严格超过阈值才触发；持续命中去重，恢复后再次越线会重新触发。
+`spoke_ids` / `reserve_ids` 支持筛选，`market_rules` 支持按 reserve ID 或完整名称覆盖。
+Rules 信赖 Aave API 格式，金额使用 BigInt，阈值判断保留整数精度。
+零 cap 与无限 cap 不做百分比判断；余额与流动性仍是 API 观测／估算。
 
-Supply/Borrow Cap 变更始终启用。每个 reserve 的两类 cap 独立比较原始 token 单位；增加、
-减少、变为零、变为无限额度都产生消息，包含资产、Hub/Spoke 和变更前后值。首次成功读取
-只建立 cap 基线；新增 reserve 也单独建立基线。存借余额或币价变化不会触发 cap 变更。
-失败不更新状态；暂时未返回或未选中的 reserve 保留最后成功读取的基线。
+**配置变更已经拆出**，market risk 不再保留 cap 基线或发送 cap-change 消息。
+协议配置变化由独立的 Source 和 Rule 实现，目标 Root Flow 为
+`u/oneke/aave_v4_market_params_monitor`。
+结果直接采用 Reader 的对象图：`Record<chainId, Record<hubAddress, HubGraph>>`。
+`HubGraph` 保留 `hub`、`spokes`、`treasuries`、`tokenizations`、`otherSpokes`、`authorities`，
+实体集合保留 Reader 数组，不转换成另一套领域对象，不跨 Hub 合并共享配置。
+字段含义、单位和公开接口边界见 [Aave V4 协议配置](MARKET_PARAMS.md)。
 
-Rules 信赖 Aave GraphQL 查询返回的数据类型，只做字段映射和数值转换，不重复校验地址、
-响应结构或 token 精度。用户配置和持久化 cap 基线仍会校验。
+采集 Workflow as Code `f/aave/scripts/workflows/collect_aave_v4_market_params`
+接收 `api` 与静态 `rpc_urls` 映射。先通过 `taskScript` 调用原生 GraphQL
+查询 Hub 地址及 chain ID，再直接遍历 `Object.entries(rpc_urls)`，按网络筛选 Hub，
+通过 `Promise.all` 并行调用各网络的 `read_hubs` 子任务。每个网络仍由 multicall 逐个执行 `readHub`。
+`read_hubs` 返回 `NetworkParams`（`hub_address → HubGraph`），不接收 chain ID。
+Workflow 按对应的 chain ID 聚合各网络结果，直接返回完整快照；Root Flow 将结果传给 Rule。
+编排入口使用 Bun runtime，以初始化 Workflow as Code 执行上下文。
+GraphQL 和网络读取分别是 Windmill 子任务，具备独立日志和 checkpoint；
+重放时只重建确定性的聚合对象，已完成的任务结果从 checkpoint 恢复。
+没有单独的合并脚本、prepare_networks、pin_block、assembler 或 normalization 脚本。
+网络由 schedule 的 RPC 映射指定，不自动发现。
 
-满额预警通过 `default_rules` 配置，例如：
+每个网络使用现有 Multicall3 `0xca11bde05977b3631167028862be2a173976ca11`，
+在一个 `eth_call` 中调用各 Hub 的 `readHub`；使用 `blockTag=latest`，不额外查询 chain ID 或区块号。
+一次 aggregate 内部读取同一区块状态；不同网络分别读取各自的 latest，不固定跨网络区块。
+`batchSize=0` 禁止拆批，任一子调用失败即失败。空 Hub 列表返回该网络的空对象，无 RPC 请求。
+Reader runtime code 通过 state override 注入固定虚拟地址，不部署、不签名。
+不用 creation-based deployless Multicall3：大对象图的返回数据会受到 EIP-170 代码大小限制。
+RPC 必须支持 state override，并部署上述 Multicall3；无自动 fallback。
 
-```json
-{
-  "max_supply_cap_used_percent": 95,
-  "max_borrow_cap_used_percent": 95
-}
-```
+Source 保留 Reader 字段名、数组、零地址、ownable/enumerable 标记及地址大小写。
+`market-params.ts` 独立声明同样的结构；类型检查验证它与 Reader 返回值完全匹配。
+viem 解码的 uint8 到 uint48 保留 number；更大的 bigint 仅在 JSON 输出时转成十进制字符串。
+无 inventory、params 包装层、旧基线或状态写入。
+不能枚举的 manager 和第三方合约内部参数不采集；Spoke 的全部 reserve 均保留，
+不递归扩展 API 未列出的 Hub。
 
-严格超过阈值时触发，持续命中去重，回到阈值以内后重新允许触发。`market_rules` 可以按
-reserve ID 或完整 `chain / hub / spoke / asset` 名称覆盖阈值；旧 Spoke 汇总 ID 的覆盖值
-需要改为 reserve ID。既有实例升级后首次运行会建立资产 cap 基线。
+Rule `evaluate_aave_v4_market_params.main(current, previous)` 是纯比较，返回 `{output, nextBaseline}`。
+Root Flow 读取 baseline、调用采集 Flow 和 Rule、应用 AlertPolicy、按需发送，然后保存 baseline。
+首次 `previous=null` 静默建立基线；显式空对象表示已有空基线，新增对象会报警。
+Reader 实体数组按各自 ID 比较，换序不报警；历史动态配置按数组下标（版本 key）比较。
+差异路径使用实体 ID，而非枚举位置。省略网络保留其基线，已观察空网络报告移除。
+采集或通知失败不推进 baseline；通知成功而保存失败时，重跑可能重复通知。
+完整差异保存在 Rule 结果和 MonitorState，AlertPolicy 仅接收轻量统计。
+Schedule 每分钟运行，`rpc_urls` 明确列出 Ethereum、Arc、Base、Avalanche，
+通过 `no_flow_overlap` 防止定时重叠。手动运行 Root Flow 也写同一状态，应避免并发。
 
-金额和 cap 比较使用 BigInt，持久化为整数字符串；使用率显示保留六位小数，但阈值判断
-使用精确整数计算。Cap 为零时表示没有新增额度，跳过百分比判断；无限额度使用 Hub 的
-`uint40` 最大值哨兵，剩余额度记为 null。有限 cap 的占用允许超过 100%，剩余下限为零。
-
-API 的 supplied/borrowed 用于使用率和剩余估算；不是独立链上验算，借款占用是否完整覆盖
-Hub 的 premium/deficit 仍需链上对照。`suppliable` / `borrowable` 保留 API 给出的实际可用量，
-与 `supply_cap_remaining` / `borrow_cap_remaining` 分别输出，避免把 cap 剩余当成可执行额度。
-`liquidity_usd` 保留 supplied USD 减 borrowed USD 的估算，不能当成共享 Hub 的实际可用流动性。
-
-本 Flow 只返回 MonitorOutput；由现有 Root Flow 接 AlertPolicy 和 Destination 发送通知。
-
-`u/oneke/aave_v4_market_params_monitor` 是接入 Telegram 的 Root Flow；同名 schedule 每分钟
-检查 schedule 中固定配置网络的全部 reserves，并跳过重叠运行。`chain_ids` 写死为
-`[1, 10, 5042, 8453, 43114]`，分别对应 Ethereum、OP Mainnet、Arc、Base 和 Avalanche，
-这是 2026-10-08 核对的 Aave V4 API 主网列表；运行时不发现网络，新网络需手动更新参数。
-实例只启用 Supply/Borrow
-Cap 变更通知，关闭暂停/Oracle 告警，未配置使用率阈值。通知复用 `u/oneke/yeap-bot` 和现有
-Telegram chat。首次观察仅建立 cap 基线；其他 market 参数尚未纳入该 schedule。
+本地验证：`bun run test`、`bun run check`，合约与 Anvil 验证见
+[Reader 文档](../../contracts/aave-v4/README.md)。无状态只读采集预览：
+`wmill script preview f/aave/scripts/workflows/collect_aave_v4_market_params.ts -d @<参数文件>`。
+`taskScript` 按路径调用工作区脚本，正式路径预览需要两个 Source 脚本已部署；
+验证未部署的本地子任务时，可在临时目录用伴随模块做隔离预览。
+旧 Hub 资产、Hub–Spoke 额度、reserve、manager 分页 GraphQL 配置链路已删除。
 
 清算 Flow 首次运行默认只建立基线，避免安装后补发全部历史记录。Aave V3 API 的历史接口要求
 单个 Pool 地址，因此一个 V3 清算 Monitor 实例对应一个部署。Aave V3/V4 当前公开响应没有足够的

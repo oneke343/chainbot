@@ -5,11 +5,12 @@ includes:
   - f/morpho/**
   - f/spark/**
   - f/chain_sentinel/**
+  - f/wmm/**
   - u/oneke/**
 excludes: [
   "u/**/**/__monitor_state.resource.yaml"
 ]
-skipVariables: true
+skipVariables: false
 skipResources: false
 skipResourceTypes: true
 skipSecrets: true

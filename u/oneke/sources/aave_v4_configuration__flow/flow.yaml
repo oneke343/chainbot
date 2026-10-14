@@ -1,0 +1,29 @@
+summary: Collect Aave V4 configuration
+description: Collect configuration from all Aave V4 mainnets with indexed Hubs
+  using the Aave V4 GraphQL Resource and per-network RPCs.
+value:
+  modules:
+    - id: collect_configuration
+      summary: Collect Aave V4 market params
+      value:
+        type: script
+        path: f/aave/scripts/workflows/collect_aave_v4_market_params
+        input_transforms:
+          api:
+            type: static
+            value: $res:f/aave/resources/aave_v4
+          rpc_urls:
+            type: static
+            value:
+              "1": https://ethereum-rpc.publicnode.com
+              "5042": https://rpc.quicknode.mainnet.arc.io
+              "8453": https://mainnet.base.org
+              "43114": https://api.avax.network/ext/bc/C/rpc
+      timeout:
+        type: static
+        value: 600
+  same_worker: false
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}

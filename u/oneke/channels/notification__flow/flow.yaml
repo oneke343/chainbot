@@ -1,0 +1,82 @@
+summary: Route notifications by message level
+description: Send all messages through the Windmill Hub Telegram integration,
+  and also send error messages to FlashDuty.
+value:
+  modules:
+    - id: notify
+      summary: Send to configured channels
+      value:
+        type: branchall
+        parallel: true
+        branches:
+          - summary: Telegram
+            skip_failure: false
+            modules:
+              - id: telegram
+                summary: Send message through Telegram Hub integration
+                value:
+                  type: script
+                  path: hub/28512/telegram/send_a_text_message_or_reply
+                  input_transforms:
+                    auth:
+                      type: static
+                      value: $res:u/oneke/yeap-bot
+                    chat_id:
+                      type: javascript
+                      expr: variable("u/oneke/channels/telegram_chat_id")
+                    text:
+                      type: javascript
+                      expr: '`[${flow_input.message.level}] ${flow_input.message.title}\n\n${flow_input.message.description}`'
+                timeout:
+                  type: static
+                  value: 30
+          - summary: FlashDuty for errors
+            skip_failure: false
+            modules:
+              - id: flashduty
+                summary: Send error message to FlashDuty
+                skip_if:
+                  expr: flow_input.message.level !== "error"
+                value:
+                  type: script
+                  path: f/chain_sentinel/scripts/destinations/send_flashduty
+                  input_transforms:
+                    destination:
+                      type: static
+                      value: $res:u/oneke/flashcat
+                    messages:
+                      type: javascript
+                      expr: |
+                        [{
+                          title: flow_input.message.title,
+                          description: flow_input.message.description,
+                          severity: "critical",
+                          fields: { level: flow_input.message.level }
+                        }]
+                timeout:
+                  type: static
+                  value: 30
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    message:
+      type: object
+      properties:
+        level:
+          type: string
+          enum:
+            - info
+            - warning
+            - error
+        title:
+          type: string
+        description:
+          type: string
+      required:
+        - level
+        - title
+        - description
+      additionalProperties: false
+  required:
+    - message

@@ -186,7 +186,8 @@ Aave 组合仓位仍是统一冲击近似值，输出会标记 `approximate: tru
 - `f/aave/flows/aave_v3_liquidations`、`aave_v4_liquidations` 与
   `f/morpho/flows/morpho_liquidations` 查询协议确认的清算事件。
 - `f/aave/flows/aave_v3_market_risk` 监控 reserve 流动性、利用率、Supply/Borrow Cap 和暂停/冻结。
-- `f/aave/flows/aave_v4_market_risk` 按 reserve 监控资产 Cap 使用率，以及 Supply/Borrow Cap 变更。
+- `f/aave/flows/aave_v4_market_risk` 按 reserve 监控流动性、利用率、资产 Cap 使用率和操作风险。
+- `u/oneke/aave_v4_market_params_monitor` 通过 Windmill 原生 GraphQL 发现 Hub，再以 multicall 和 deployless Reader 独立监控 V4 cap、利率、全部动态风险配置、清算、权限和可读取的升级配置；详见 [配置清单](f/aave/MARKET_PARAMS.md)。
 - `f/morpho/flows/morpho_market_risk` 监控 Oracle warnings、已实现/未实现坏账、流动性和利用率。
 
 清算 Monitor 首次运行默认只建立基线；随后使用稳定事件 ID 去重。Morpho 同时保存

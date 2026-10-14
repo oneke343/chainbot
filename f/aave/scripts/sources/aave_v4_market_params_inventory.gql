@@ -1,0 +1,5 @@
+query AaveV4ParamsInventory($chain_ids: [ChainId!]!) {
+  hubs(request: {query: {chainIds: $chain_ids}}) {
+    address chain {chainId}
+  }
+}

@@ -1,0 +1,11 @@
+summary: Aave V4 Reader-shaped market configuration types
+description: Independent definitions matching the deployless Reader structs and their JSON representation.
+lock: "!inline f/aave/lib/market-params.script.lock"
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    {}
+  required:
+    []

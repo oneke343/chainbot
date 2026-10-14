@@ -15,8 +15,4 @@ include line if you don't want the managed guidance in this project.
 Deploy mode: git push (GitHub Actions runs `wmill sync push`; scheduled Actions run
 `wmill sync pull` and commit Windmill workspace changes back to `main`).
 
-<!-- Add anything specific to this repo here. Examples:
-     - Deploy commands or environments unique to this project.
-     - Domain glossary, naming conventions, or "ask before X" rules.
-     - Overrides for the managed guidance above (be explicit that they
-       supersede the managed rule). -->
+@AGENTS.coding.md

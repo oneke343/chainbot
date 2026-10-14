@@ -1,30 +1,35 @@
-summary: Monitor Aave V4 market cap changes
-description: Poll the configured Aave V4 networks every minute and send supply/borrow
-  cap change alerts to Telegram.
+summary: Monitor Aave V4 market params changes
+description: Read Hub, Spoke, reserve, historical risk configs, oracle sources, permissions
+  and proxy settings on configured networks; notify Telegram on changes.
 value:
   modules:
-    - id: monitor
-      summary: Read asset caps and detect changes
+    - id: source
+      summary: Read complete market configuration snapshots
       value:
-        type: flow
-        path: f/aave/flows/aave_v4_market_risk
+        type: script
+        path: f/aave/scripts/sources/aave_v4_market_params
         input_transforms:
           api: {type: javascript, expr: flow_input.api}
           chain_ids: {type: javascript, expr: flow_input.chain_ids}
-          spoke_ids: {type: javascript, expr: 'flow_input.spoke_ids ?? []'}
-          reserve_ids: {type: javascript, expr: 'flow_input.reserve_ids ?? []'}
-          default_rules: {type: javascript, expr: flow_input.default_rules}
-          market_rules: {type: javascript, expr: 'flow_input.market_rules ?? {}'}
+          rpc_urls: {type: javascript, expr: flow_input.rpc_urls}
+      timeout: {type: static, value: 300}
+    - id: rules
+      summary: Compare configurations and save the new baseline
+      value:
+        type: script
+        path: f/aave/scripts/rules/evaluate_aave_v4_market_params
+        input_transforms:
+          inputs: {type: javascript, expr: results.source}
     - id: alert_policy
-      summary: Build cap change alerts
+      summary: Build market configuration change alerts
       value:
         type: script
         path: f/chain_sentinel/scripts/alert_policies/matched_output
         input_transforms:
-          monitor_output: {type: javascript, expr: results.monitor}
+          monitor_output: {type: javascript, expr: results.rules}
           severity: {type: javascript, expr: flow_input.severity}
     - id: send_to_telegram
-      summary: Send cap change alerts to Telegram
+      summary: Send configuration changes to Telegram
       value:
         type: script
         path: f/chain_sentinel/scripts/destinations/send_telegram
@@ -42,7 +47,7 @@ value:
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
-  order: [api, chain_ids, spoke_ids, reserve_ids, default_rules, market_rules, severity, telegram_auth, telegram_chat_id]
+  order: [api, chain_ids, rpc_urls, severity, telegram_auth, telegram_chat_id]
   properties:
     api: {type: object, format: resource-graphql}
     chain_ids:
@@ -50,38 +55,13 @@ schema:
       minItems: 1
       uniqueItems: true
       items: {type: integer, minimum: 1}
-    spoke_ids:
-      type: array
-      default: []
-      uniqueItems: true
-      items: {type: string, minLength: 1}
-    reserve_ids:
-      type: array
-      default: []
-      uniqueItems: true
-      items: {type: string, minLength: 1}
-    default_rules:
-      $ref: '#/$defs/rules'
-      description: Use alert_paused=false and alert_oracle_warnings=false for cap-change-only monitoring.
-    market_rules:
+    rpc_urls:
       type: object
-      default: {}
-      additionalProperties:
-        $ref: '#/$defs/rules'
+      description: Explicit RPC URLs keyed by chain ID; each must match its configured network.
+      additionalProperties: {type: string}
     severity:
       type: string
       enum: [info, warning, critical]
     telegram_auth: {type: object, format: resource-telegram}
     telegram_chat_id: {type: string, minLength: 1}
-  required: [api, chain_ids, default_rules, severity, telegram_auth, telegram_chat_id]
-  $defs:
-    rules:
-      type: object
-      additionalProperties: false
-      properties:
-        min_liquidity_usd: {type: number, minimum: 0}
-        max_utilization_percent: {type: number, minimum: 0}
-        max_supply_cap_used_percent: {type: number, minimum: 0}
-        max_borrow_cap_used_percent: {type: number, minimum: 0}
-        alert_paused: {type: boolean}
-        alert_oracle_warnings: {type: boolean}
+  required: [api, chain_ids, rpc_urls, severity, telegram_auth, telegram_chat_id]

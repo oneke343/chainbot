@@ -1,0 +1,20 @@
+summary: Read Aave V4 Hub graphs at latest
+description: Return NetworkParams from one latest multicall; preserve Reader fields and arrays.
+lock: '!inline f/aave/scripts/sources/aave_v4_read_hubs.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    hub_addresses:
+      type: array
+      default: null
+      items:
+        type: string
+    rpc_url:
+      type: string
+      default: null
+      originalType: string
+  required:
+    - rpc_url
+    - hub_addresses

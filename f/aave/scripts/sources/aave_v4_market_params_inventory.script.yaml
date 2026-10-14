@@ -1,0 +1,20 @@
+summary: Query Aave V4 Hub addresses
+description: Native GraphQL Hub address and chain ID discovery.
+lock: ""
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    api:
+      type: object
+      format: resource-graphql
+    chain_ids:
+      type: array
+      items:
+        type: integer
+      minItems: 1
+      uniqueItems: true
+  required:
+    - api
+    - chain_ids

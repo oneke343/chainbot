@@ -1,26 +1,22 @@
-summary: Check Aave V4 market cap changes every minute
-description: Monitor Aave V4 reserves on the configured mainnets for
-  supply/borrow cap changes and send Telegram alerts. First observations
-  establish cap baselines.
-args:
-  api: $res:f/aave/resources/aave_v4
-  chain_ids:
-    - 1
-    - 5042
-    - 8453
-    - 43114
-  default_rules:
-    alert_oracle_warnings: false
-    alert_paused: false
-  market_rules: {}
-  reserve_ids: []
-  severity: info
-  spoke_ids: []
-  telegram_auth: $res:u/oneke/yeap-bot
-  telegram_chat_id: '-1004252768572'
+summary: Check Aave V4 market params changes every minute
+description: "Monitor Hub assets, registered Spoke caps, reserve configuration history, liquidation, permissions and supported proxy configuration. First observation establishes a silent baseline."
+schedule: 0 */1 * * * *
+timezone: Asia/Shanghai
 cron_version: v2
 enabled: true
 is_flow: true
+script_path: u/oneke/aave_v4_market_params_monitor
+args:
+  api: $res:f/aave/resources/aave_v4
+  severity: info
+  spoke_ids: []
+  telegram_auth: $res:u/oneke/yeap-bot
+  telegram_chat_id: "-1004252768572"
+  rpc_urls:
+    "1": https://ethereum-rpc.publicnode.com
+    "5042": https://rpc.quicknode.mainnet.arc.io
+    "8453": https://mainnet.base.org
+    "43114": https://api.avax.network/ext/bc/C/rpc
 no_flow_overlap: true
 schedule: 0 */1 * * * *
 script_path: u/oneke/aave_v4_market_params_monitor

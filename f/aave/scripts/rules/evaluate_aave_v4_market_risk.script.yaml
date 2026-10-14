@@ -1,4 +1,4 @@
-summary: Evaluate Aave V4 reserve cap changes and risk and save MonitorState
+summary: Evaluate Aave V4 reserve risk and save MonitorState
 description: ''
 lock: '!inline f/aave/scripts/rules/evaluate_aave_v4_market_risk.script.lock'
 kind: script

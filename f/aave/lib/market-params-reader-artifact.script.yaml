@@ -1,0 +1,11 @@
+summary: Aave V4 configuration Reader ABI and bytecode
+description: "Generated ABI, creation bytecode and runtime bytecode."
+lock: "!inline f/aave/lib/market-params-reader-artifact.script.lock"
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    {}
+  required:
+    []

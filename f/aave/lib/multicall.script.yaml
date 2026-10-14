@@ -1,0 +1,9 @@
+summary: Typed RPC multicall
+description: Import-only RPC URL and viem multicall parameters with ABI-inferred results.
+lock: '!inline f/aave/lib/multicall.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

@@ -1,6 +1,5 @@
-summary: Aave V4 asset cap and market risk
-description: Monitor individual reserve cap usage and supply/borrow cap changes. The
-  first successful observation establishes the cap baseline without a change alert.
+summary: Aave V4 market risk
+description: Monitor reserve liquidity, utilization, cap usage and operational risk.
 value:
   modules:
     - id: source

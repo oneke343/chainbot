@@ -8,8 +8,15 @@
     "check": "bun build f/*/scripts/*/*.ts f/*/lib/*.ts --target=bun --external windmill-client --outdir=/tmp/chain-sentinel-windmill-build && wmill lint . --fail-on-warn --locks-required"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.9",
+    "@types/emscripten": "1.41.6",
     "bun-types": "^1.4.0",
     "typescript": "^7.0.2",
     "windmill-client": "^1.800.0"
+  },
+  "dependencies": {
+    "fast-json-patch": "3.1.1",
+    "handlebars": "4.7.10",
+    "viem": "2.57.4"
   }
 }

@@ -22,8 +22,7 @@ type Reserve = {
   canBorrow: boolean;
 };
 type Result = { reserves: Reserve[] };
-type CapBaseline = { supply: string; borrow: string; decimals: number };
-type State = MarketRiskState & { caps: Record<string, CapBaseline> };
+type State = MarketRiskState;
 type Snapshot = MarketRiskSnapshot & {
   spoke_id: string;
   spoke_address: string;
@@ -44,13 +43,6 @@ type Snapshot = MarketRiskSnapshot & {
 };
 
 const MAX_SPOKE_CAP = (1n << 40n) - 1n;
-
-function baselineCap(value: unknown): bigint {
-  if (typeof value !== "string" || !/^\d+$/.test(value)) {
-    throw new Error("Previous cap must be a non-negative integer string");
-  }
-  return BigInt(value);
-}
 
 function unlimited(cap: bigint, decimals: number): boolean {
   return cap === MAX_SPOKE_CAP * 10n ** BigInt(decimals);
@@ -153,18 +145,7 @@ export function evaluateAaveV4MarketRisk(
   }
   const risk = evaluateMarketRisk(markets, withoutCapRules(default_rules),
     Object.fromEntries(Object.entries(market_rules).map(([id, rules]) => [id, withoutCapRules(rules)])), previous);
-  if (previous.caps !== undefined && (!previous.caps || typeof previous.caps !== "object" || Array.isArray(previous.caps))) {
-    throw new Error("Invalid cap baselines");
-  }
-  const caps = { ...previous.caps };
-  const changes: Array<Record<string, unknown>> = [];
-
   for (const market of markets) {
-    const old = caps[market.id];
-    if (Object.hasOwn(caps, market.id) && (!old || typeof old !== "object" || Array.isArray(old))) {
-      throw new Error(`Invalid cap baseline: ${market.id}`);
-    }
-    if (old && old.decimals !== market.decimals) throw new Error(`Cap baseline decimals mismatch: ${market.id}`);
     const rules = { ...default_rules, ...(market_rules[market.id] ?? market_rules[market.market] ?? {}) };
     for (const side of ["supply", "borrow"] as const) {
       const cap = market[`${side}_cap`];
@@ -173,15 +154,6 @@ export function evaluateAaveV4MarketRisk(
         chain_id: market.chain_id, hub_address: market.hub_address, spoke_address: market.spoke_address,
         asset_address: market.asset_address, decimals: market.decimals,
       };
-      if (old && baselineCap(old[side]).toString() !== cap) {
-        const change = { ...shared, kind: "cap_change", old_cap: old[side], new_cap: cap };
-        changes.push(change);
-        risk.output.messages.push({
-          title: `Aave V4 ${market.symbol} ${side} cap changed`,
-          description: `Market: ${market.market}\n${side} cap: ${capLabel(old[side], market.decimals)} → ${capLabel(cap, market.decimals)} ${market.symbol}`,
-          fields: { ...change, finding_kind: "cap_change" },
-        });
-      }
       const limit = rules[`max_${side}_cap_used_percent`];
       if (limit === undefined) continue;
       if (!Number.isFinite(limit) || limit < 0) throw new Error("Cap threshold must be non-negative and finite");
@@ -207,13 +179,12 @@ export function evaluateAaveV4MarketRisk(
         });
       }
     }
-    caps[market.id] = { supply: market.supply_cap, borrow: market.borrow_cap, decimals: market.decimals };
   }
   return {
-    states: { ...risk.states, caps } satisfies State,
+    states: risk.states,
     output: {
       ...risk.output, matched: risk.output.messages.length > 0,
-      fields: { ...risk.output.fields, cap_changes: changes, message_count: risk.output.messages.length },
+      fields: { ...risk.output.fields, message_count: risk.output.messages.length },
     },
   };
 }
