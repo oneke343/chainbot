@@ -6,6 +6,7 @@ includes:
   - f/spark/**
   - f/chain_sentinel/**
   - f/wmm/**
+  - f/handlebars/**
   - u/oneke/**
 excludes: [
   "u/**/**/__monitor_state.resource.yaml"
