@@ -9,13 +9,11 @@ schema:
     after:
       type: object
       description: ''
-      default: null
+      default: {}
       format: resource-json_object
     before:
       type: object
       description: ''
-      default: null
+      default: {}
       format: resource-json_object
-  required:
-    - before
-    - after
+  required: []

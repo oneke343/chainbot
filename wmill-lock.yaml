@@ -38,7 +38,7 @@ locks:
   f/chain_sentinel/lib/render-message: 98b6acfae3c7496511a35774f128f2a988f63388f344e5e9741747f756d149ef
   f/chain_sentinel/lib/source-tm: 36c365322dbb67b4cdf20ab320bc6382621f8b974158cdd354697fbabf4194db
   f/chain_sentinel/rules/and: 6b463bae75ec265d9b154907320bcd988d5edaba15808e137bf12a448b823a94
-  f/chain_sentinel/rules/diff: b91aafe22ceadebdbb263bd05d20fac9ec21e9dceaceb9e0f0fffb0f7e87a927
+  f/chain_sentinel/rules/diff: 8d57c69ba0e415504d113ce9d318275608a188dc39d4722357e0f4f54727a4a3
   f/chain_sentinel/rules/or: 4be2927bc03c2429a15de75ad22a177db9f2abd75e94dafd644f9adedc20383f
   f/chain_sentinel/scripts/alert_policies/matched_output: 7b4f52dbda04f15b99ec3875922538afa2e51db4d8d27a2372541334b190fdbf
   f/chain_sentinel/scripts/destinations/send_flashduty: 191fadea4701faccc583057ac2bc2d6d24e203b95e372f60996ec34646e6dbe2
