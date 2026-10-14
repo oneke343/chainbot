@@ -7,16 +7,13 @@ value:
       summary: Send to configured channels
       value:
         type: branchall
-        parallel: true
         branches:
           - summary: Telegram
-            skip_failure: false
             modules:
               - id: telegram
                 summary: Send message through Telegram Hub integration
                 value:
                   type: script
-                  path: hub/28512/telegram/send_a_text_message_or_reply
                   input_transforms:
                     auth:
                       type: static
@@ -26,20 +23,21 @@ value:
                       expr: variable("u/oneke/channels/telegram_chat_id")
                     text:
                       type: javascript
-                      expr: '`[${flow_input.message.level}] ${flow_input.message.title}\n\n${flow_input.message.description}`'
+                      expr: '`[${flow_input.message.level}]
+                        ${flow_input.message.title}\n\n${flow_input.message.description}`'
+                  path: hub/28512/telegram/send_a_text_message_or_reply
                 timeout:
                   type: static
                   value: 30
-          - summary: FlashDuty for errors
+            expr: ''
+            parallel: true
             skip_failure: false
+          - summary: FlashDuty for errors
             modules:
               - id: flashduty
                 summary: Send error message to FlashDuty
-                skip_if:
-                  expr: flow_input.message.level !== "error"
                 value:
                   type: script
-                  path: f/chain_sentinel/scripts/destinations/send_flashduty
                   input_transforms:
                     destination:
                       type: static
@@ -53,16 +51,26 @@ value:
                           severity: "critical",
                           fields: { level: flow_input.message.level }
                         }]
+                  path: f/chain_sentinel/scripts/destinations/send_flashduty
+                skip_if:
+                  expr: flow_input.message.level !== "error"
                 timeout:
                   type: static
                   value: 30
+            expr: ''
+            parallel: true
+            skip_failure: false
+        parallel: true
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
     message:
       type: object
+      additionalProperties: false
       properties:
+        description:
+          type: string
         level:
           type: string
           enum:
@@ -71,12 +79,9 @@ schema:
             - error
         title:
           type: string
-        description:
-          type: string
       required:
         - level
         - title
         - description
-      additionalProperties: false
   required:
     - message
