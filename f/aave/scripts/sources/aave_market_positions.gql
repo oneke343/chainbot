@@ -7,6 +7,7 @@ query AaveMarketPositions($user: EvmAddress!, $chainIds: [ChainId!]!) {
       name
     }
     userState {
+      eModeEnabled
       healthFactor
       totalDebtBase
       totalCollateralBase
