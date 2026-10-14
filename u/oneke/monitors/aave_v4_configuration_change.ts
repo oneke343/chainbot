@@ -33,7 +33,7 @@ export const main = workflow(async () => {
   if (patch.length === 0) {
     return;
   }
-  const desc = await handlebarsRender(TEMPLATE, { patch });
+  const desc = await handlebarsRender({ template: TEMPLATE, context: { patch } });
 
   await notificationFlow({
     message: {

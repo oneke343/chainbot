@@ -5,6 +5,7 @@ import jsonpatch from "fast-json-patch";
 import { main as monitor } from "../u/oneke/monitors/aave_v4_configuration_change.ts";
 import { main as readPrevious } from "../f/chain_sentinel/sources/previous.ts";
 import { main as calculateDiff } from "../f/chain_sentinel/rules/diff.ts";
+import { main as render } from "../f/handlebars/render.ts";
 
 const sourcePath = "u/oneke/sources/aave_v4_configuration";
 const current = { "1": { hub: { cap: 200 } } };
@@ -22,7 +23,7 @@ async function nextDispatch(completed_steps: Record<string, unknown>) {
   return steps[0];
 }
 
-test("WAC reads history before collection and replays the original baseline", async (t) => {
+test("WAC reads history before collection, renders changes and checkpoints notification", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   t.mock.method(globalThis, "fetch", () => { throw new Error("workflow body must not contact external services"); });
   const before = { "1": { hub: { cap: 100 } } };
@@ -50,15 +51,32 @@ test("WAC reads history before collection and replays the original baseline", as
   assert.deepEqual(jsonpatch.applyPatch(structuredClone(before), patch, true).newDocument, current);
   completed_steps[comparison.key] = patch;
 
+  const rendering = await nextDispatch(completed_steps);
+  assert.equal(rendering.script, "f/handlebars/render");
+  assert.equal(rendering.dispatch_type, "script");
+  assert.deepEqual(Object.keys(rendering.args).sort(), ["context", "template"]);
+  assert.deepEqual(rendering.args.context, { patch });
+  const description = await render(rendering.args.template, rendering.args.context);
+  assert.match(description, /Replaced \/1\/hub\/cap: 100 -> 200/);
+  completed_steps[rendering.key] = description;
+
+  const notification = await nextDispatch(completed_steps);
+  assert.equal(notification.script, "u/oneke/channels/notification");
+  assert.equal(notification.dispatch_type, "flow");
+  assert.deepEqual(notification.args, { message: {
+    level: "info", title: "Aave v4 configuration change detected", description,
+  } });
+  completed_steps[notification.key] = { delivered: true };
+
   const checkpoint = structuredClone(completed_steps);
   const ctx = new wmill.WorkflowCtx({ completed_steps });
   wmill.setWorkflowCtx(ctx);
-  assert.deepEqual(await monitor(), patch);
+  assert.equal(await monitor(), undefined);
   assert.deepEqual(ctx._flushPending(), []);
   assert.deepEqual(completed_steps, checkpoint);
 });
 
-test("first observation still collects the Source and returns null without diff", async (t) => {
+test("first observation still collects the Source without diff or notification", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const completed_steps: Record<string, unknown> = { previous: null };
   const collection = await nextDispatch(completed_steps);
@@ -66,11 +84,11 @@ test("first observation still collects the Source and returns null without diff"
   completed_steps[collection.key] = current;
   const ctx = new wmill.WorkflowCtx({ completed_steps });
   wmill.setWorkflowCtx(ctx);
-  assert.equal(await monitor(), null);
+  assert.equal(await monitor(), undefined);
   assert.deepEqual(ctx._flushPending(), []);
 });
 
-test("unchanged configuration computes diff but returns null", async (t) => {
+test("unchanged configuration computes diff without rendering or notification", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const completed_steps: Record<string, unknown> = {
     previous: { result: structuredClone(current) },
@@ -79,8 +97,10 @@ test("unchanged configuration computes diff but returns null", async (t) => {
   const comparison = await nextDispatch(completed_steps);
   assert.equal(comparison.script, "f/chain_sentinel/rules/diff");
   completed_steps[comparison.key] = await calculateDiff(structuredClone(current), current);
-  wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
-  assert.equal(await monitor(), null);
+  const ctx = new wmill.WorkflowCtx({ completed_steps });
+  wmill.setWorkflowCtx(ctx);
+  assert.equal(await monitor(), undefined);
+  assert.deepEqual(ctx._flushPending(), []);
 });
 
 test("comparison ignores object property order", async (t) => {
@@ -93,25 +113,41 @@ test("comparison ignores object property order", async (t) => {
   assert.deepEqual(comparison.args, { before, after });
   completed_steps[comparison.key] = await calculateDiff(before, after);
   wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
-  assert.equal(await monitor(), null);
+  assert.equal(await monitor(), undefined);
 });
 
-test("removing all configuration returns a non-empty patch", async (t) => {
+test("removing all configuration renders a removal and sends notification", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const patch = await calculateDiff(current, {});
-  wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps: {
+  assert.deepEqual(patch, [{ op: "remove", path: "/1", oldValue: current["1"] }]);
+  const completed_steps: Record<string, unknown> = {
     previous: { result: current }, aave_v4_configuration: {}, diff: patch,
-  } }));
-  assert.deepEqual(await monitor(), [{ op: "remove", path: "/1", oldValue: current["1"] }]);
+  };
+  const rendering = await nextDispatch(completed_steps);
+  const description = await render(rendering.args.template, rendering.args.context);
+  assert.match(description, /Removed \/1:/);
+  completed_steps[rendering.key] = description;
+  const notification = await nextDispatch(completed_steps);
+  assert.equal(notification.script, "u/oneke/channels/notification");
+  assert.equal(notification.args.message.description, description);
+  completed_steps[notification.key] = { delivered: true };
+  wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
+  assert.equal(await monitor(), undefined);
 });
 
-test("WAC propagates history, Source and diff task failures", async (t) => {
+test("WAC propagates history, Source, diff, rendering and notification failures", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const failure = { __wmill_error: true, message: "Task failed" };
+  const changes = {
+    previous: { result: {} }, aave_v4_configuration: current,
+    diff: await calculateDiff({}, current),
+  };
   for (const completed_steps of [
     { previous: failure },
     { previous: { result: current }, aave_v4_configuration: failure },
     { previous: { result: current }, aave_v4_configuration: current, diff: failure },
+    { ...changes, render: failure },
+    { ...changes, render: "Changes detected", notification: failure },
   ]) {
     const ctx = new wmill.WorkflowCtx({ completed_steps });
     wmill.setWorkflowCtx(ctx);
