@@ -18,7 +18,4 @@ args:
     "8453": https://mainnet.base.org
     "43114": https://api.avax.network/ext/bc/C/rpc
 no_flow_overlap: true
-schedule: 0 */1 * * * *
-script_path: u/oneke/aave_v4_market_params_monitor
-timezone: Asia/Shanghai
 ws_error_handler_muted: false
