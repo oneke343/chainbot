@@ -48,8 +48,12 @@ export async function* getJobHistory(
 
       // Windmill filters by JSON containment; compare the full input for an exact match.
       if (input !== undefined && !isDeepStrictEqual(job.args ?? {}, input)) continue;
-
-      yield job;
+      if (job.result === "WINDMILL_TOO_BIG") {
+        const jobResult = await JobService.getCompletedJobResult({ workspace, id: job.id }); // Preload the result for the caller.
+        yield { ...job, result: jobResult };
+      } else {
+        yield job;
+      }
     }
 
     if (jobs.length < perPage) return;
