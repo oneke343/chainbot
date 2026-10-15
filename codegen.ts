@@ -2,15 +2,17 @@ import { globSync } from "node:fs";
 import { basename } from "node:path";
 import type { CodegenConfig } from "@graphql-codegen/cli";
 
+const documents = globSync("f/aave/**/*.gql").sort();
+
 const config: CodegenConfig = {
   generates: Object.fromEntries(
-    globSync("f/aave/**/*.gql").sort().map((document) => [
-      document.replace(/\.gql$/, ".types.ts"),
+    ["v3", "v4"].map((version) => [
+      `f/aave/${version}.types.ts`,
       {
-        schema: basename(document).startsWith("aave_v4_")
-          ? "https://api.v4.aave.com/graphql"
-          : "https://api.v3.aave.com/graphql",
-        documents: document,
+        schema: `https://api.${version}.aave.com/graphql`,
+        documents: documents.filter((document) =>
+          basename(document).startsWith("aave_v4_") === (version === "v4")
+        ),
         plugins: ["typescript-operations"],
       },
     ]),

@@ -1,6 +1,6 @@
 import { taskScript, workflow } from "windmill-client";
 import type { AaveV3UserPosition } from "./types.ts";
-import type { AaveMarketPositionsQuery } from "./aave_v3_users_positions__mod/aave_v3_user_positions.types.ts";
+import type { AaveMarketPositionsQuery } from "../v3.types.ts";
 
 // Relative module references include the packaged file's extension.
 const queryUserPositions = taskScript("./aave_v3_user_positions.gql");
