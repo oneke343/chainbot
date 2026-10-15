@@ -6,6 +6,7 @@ query AaveV4UserPositions($user: EvmAddress!, $chain_ids: [ChainId!]!) {
   }) {
     user
     healthFactor {current}
+    averageCollateralFactor {normalized}
     totalDebt {current {value}}
     totalCollateral {current {value}}
     spoke {address name chain {chainId name}}

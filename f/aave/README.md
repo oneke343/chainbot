@@ -17,6 +17,32 @@ V3 使用 `u/oneke/monitors/aave_v3_hf_alert`：通过 `sources/aave_v3_users_po
 `thresholds` 按市场名称覆盖 `defaultThreshold`，默认忽略启用 eMode 的市场。
 V4 使用 `flows/aave_v4_health__flow`，按用户在每个 Spoke 的整体账户监控 HF。
 
+## V4 HF 告警 WAC
+
+`u/oneke/monitors/aave_v4_hf_alert` 通过 `sources/aave_v4_users_positions` 自动发现主网，
+并行查询多个用户，再逐用户调用 `rules/aave_v4_hf`。Source 复用现有 V4 GraphQL Script，
+返回 `user -> positions[]`，保留 HF 为 `0` 的仓位，跳过 HF 为 `null` 的仓位。
+
+```yaml
+users:
+  - "0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3"
+api: "$res:f/aave/resources/aave_v4"
+defaultThreshold: 1.1
+ltvThreshold: 90
+thresholds:
+  "Ethereum / Main": 1.2
+  "Avalanche / AVAX Correlated": 1.05
+```
+
+`thresholds` 按 `chainName / spokeName` 精确匹配，未配置的 Spoke 使用 `defaultThreshold`。
+`ltvThreshold` 是百分比，默认 `90`。Rule 使用 API 的 `averageCollateralFactor.normalized`
+作为高 LTV 仓位的筛选指标，配置抵押因子达到或超过该阈值时忽略该仓位，类似 V3 的 eMode 忽略规则。
+这里使用配置抵押因子，不是实际债务／抵押品比值，也不代表协议提供了 eMode 标记。
+其余仓位判断 `HF < threshold`，等于 HF 阈值不命中。
+每个命中用户返回一条包含用户、Spoke、网络、HF、配置抵押因子和实际阈值的 error 消息。
+WAC 将非空消息交给 `u/oneke/channels/notification`，发送 Telegram 和 FlashDuty，并返回告警数组。
+以下 V4 参数和状态机章节对应 `flows/aave_v4_health__flow`。
+
 ## V4 参数
 
 ```yaml

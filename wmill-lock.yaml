@@ -9,8 +9,9 @@ locks:
   f/aave/lib/market-params-reader-artifact: 415cb49b3916ab77fd64572b65f99a25a71b8b5fc4efaed39ec26ec171f484c9
   f/aave/lib/multicall: 582ab9dda57189aa6b7bba74429d4014d08aecf12c8fa8bc953c2a12d06a82f4
   f/aave/lib/v3-types: 78d2669b2467baf53302166a0a376be4e2be84b2df621bdae6a60d62bc06e613
-  f/aave/lib/v4-types: 201a166e6cf968cfadcae52e3613de9e9e8523b1c1a2b36769a92c782ce618d5
+  f/aave/lib/v4-types: 843adff90c90434a7bb7526224e367864f55f39f7e612bbd10861774bb67ce22
   f/aave/rules/aave_v3_hf: 62a6480478413917b563bfdc67cbc39fe85ed53d49ea237568655dcb5e39b9e3
+  f/aave/rules/aave_v4_hf: c055d8b7d27a7887ba5fd7854a19984b697affb1680746f0f87686ac2ed7b5cb
   f/aave/scripts/rules/evaluate_aave_v3_liquidations: fdabf212ca4490932a40b1a19ee261261eb2ab7798392a7475d795bf815b95ef
   f/aave/scripts/rules/evaluate_aave_v3_market_risk: edead911839531aee4b3c0ff93ac7983b8a0899503a02b2e36f414ff8091dead
   f/aave/scripts/rules/evaluate_aave_v4_health: dd489ce6cc415534ad6b3b860e15e5c9a66fbca70b96936fe52cff62b18155b3
@@ -23,12 +24,13 @@ locks:
   f/aave/scripts/sources/aave_v4_market_risk: c0ec25ce7ca7f24e170783611cb75e20c76954850055d57706dd7f71447119ac
   f/aave/scripts/sources/aave_v4_read_hubs: 5061c6ae5e87beb1baa1797f10d1aa983d512c106cdae5dfe0527cd2158cf219
   f/aave/scripts/sources/aave_v4_user_liquidations: c37fbfe9693e267ebeb3f726ed3940f030568849448a812124537272f419b366
-  f/aave/scripts/sources/aave_v4_user_positions: 1f0f2d8318dae14f1aa2b719ebe7b7f24d628d777cdd3bd53e8baeffc0b82bdf
+  f/aave/scripts/sources/aave_v4_user_positions: f4ea227ecb6a1008c138537a3eaae5723577960a9676c0f9f0c5b1d1f7272c86
   f/aave/scripts/workflows/collect_aave_v4_market_params: 33e146ed4ecff3d13df44f033ba0163d6d37d749b45c42b1e0b18df6087245c0
   f/aave/sources/aave_v3_chains: f8f4bd9836e8adb534848493a333e4b751e80e48bcdadd23297ca3824b2f13c0
   f/aave/sources/aave_v3_users_positions+__script_hash: e1237260e0d38f81d47420ac2453f1b7a8d3bb6e9c87f466cc8ad9df3eece0e1
   f/aave/sources/aave_v3_users_positions+aave_v3_user_positions.gql: c2632e690a1d70384b7496c81f7447b75827a547cf130ebd306755f75890fea2
-  f/aave/sources/types: 76de09c2f00431c969443e20239d5bcdaaae3cf9e38b19f0406ee01d2974c7ff
+  f/aave/sources/aave_v4_users_positions: f333f02fa4ebadd2b4a47aac2328d332f2f2c3135ba88da06bd424ea4dbfdc38
+  f/aave/sources/types: dce72310e173a44d2a125815b56e22454e1ee32f87c58cf9db993b19c2c4dfd4
   f/aave/v3: 76e6a8b439fdce0ab8fd89b426f871be937bddd6d32deb4d4f0d272f189d4864
   f/aave/v4: 36e20b693ae467ff1467cd57a86dae0d69afbdabc5cc1e875beec16025c57513
   f/binance/flows/spot_price_change__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
@@ -72,4 +74,5 @@ locks:
   u/oneke/channels/notification__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
   u/oneke/monitors/aave_v3_hf_alert: 0f8b270cc5faf40ddc3864047fa0b943e24664c8c3af3b50f897ec3102375c7e
   u/oneke/monitors/aave_v4_configuration_change: c316e11e0d1f55b10cb4b450049cd3a952e4c5ba3079bcfaa96feec19a764552
+  u/oneke/monitors/aave_v4_hf_alert: 243af3b7fb570112a90f70cbed5fe7037905e34e6f07a88b20558307055d1a3f
   u/oneke/sources/aave_v4_configuration__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a

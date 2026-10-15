@@ -16,15 +16,15 @@ schema:
       default: null
       items:
         type: integer
-        minimum: 1
       minItems: 1
-      originalType: number[]
+      originalType: record[]
     user:
-      type: string
+      type: object
       description: ''
       default: null
       originalType: string
       pattern: ^0x[0-9a-fA-F]{40}$
+      properties: {}
   required:
     - api
     - user

@@ -1,0 +1,36 @@
+summary: ''
+description: ''
+lock: '!inline f/aave/rules/aave_v4_hf.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    defaultThreshold:
+      type: number
+      description: ''
+      default: 1.1
+    ltvThreshold:
+      type: number
+      description: ''
+      default: 90
+    positions:
+      type: array
+      description: ''
+      default: null
+      items:
+        type: resource
+        resourceType: aave_v4_user_position
+      originalType: resource[]
+    thresholds:
+      type: object
+      description: ''
+      default: {}
+      format: resource-record
+    user:
+      type: string
+      description: ''
+      default: null
+      originalType: string
+  required:
+    - positions

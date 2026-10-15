@@ -50,4 +50,4 @@ export type AaveV4UserPositionsQueryVariables = Exact<{
 }>;
 
 
-export type AaveV4UserPositionsQuery = { userPositions: Array<{ user: string, healthFactor: { current: string | null }, totalDebt: { current: { value: string } }, totalCollateral: { current: { value: string } }, spoke: { address: string, name: string, chain: { chainId: number, name: string } } }> };
+export type AaveV4UserPositionsQuery = { userPositions: Array<{ user: string, healthFactor: { current: string | null }, averageCollateralFactor: { normalized: string }, totalDebt: { current: { value: string } }, totalCollateral: { current: { value: string } }, spoke: { address: string, name: string, chain: { chainId: number, name: string } } }> };
