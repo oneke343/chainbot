@@ -1,13 +1,10 @@
 description: OKX API endpoint and HMAC credentials.
+format_extension: null
+is_fileset: false
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    url:
-      type: string
-      format: uri
-      default: https://openapi.okx.com
-      description: API base URL for the account's region.
     api_key:
       type: string
       password: true
@@ -17,6 +14,11 @@ schema:
     passphrase:
       type: string
       password: true
+    url:
+      type: string
+      description: API base URL for the account's region.
+      default: https://openapi.okx.com
+      format: uri
   required:
     - url
     - api_key

@@ -1,21 +1,23 @@
 description: Binance HMAC API endpoint.
+format_extension: null
+is_fileset: false
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    url:
-      type: string
-      format: uri
-      default: https://api.binance.com
-      description: Base URL for Binance API endpoints.
     api_key:
-      description: Binance API HMAC key.
       type: string
+      description: Binance API HMAC key.
       password: true
     api_secret:
-      description: Binance API HMAC secret.
       type: string
+      description: Binance API HMAC secret.
       password: true
+    url:
+      type: string
+      description: Base URL for Binance API endpoints.
+      default: https://api.binance.com
+      format: uri
   required:
     - url
     - api_key
