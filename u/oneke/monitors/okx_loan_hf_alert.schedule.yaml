@@ -4,7 +4,7 @@ args:
   defaultThreshold: 1.2
   thresholds: {}
 cron_version: v2
-enabled: false
+enabled: true
 is_flow: false
 no_flow_overlap: true
 schedule: 49 */5 * * * *
