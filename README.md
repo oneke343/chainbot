@@ -106,34 +106,19 @@ Morpho 使用原生 `.gql` 一次获取最多 1000 个仓位，Rule 检查返回
 不静默漏监控、不自动分页。Aave V4 要求非空网络列表，因此先用独立 `.gql` 查询发现主网，
 再把网络 ID 传给仓位查询，不写死链列表。
 
-以下为原有 Aave V3 Monitor：
-
-`f/aave/flows/aave_health__flow` 完整实现了 Monitor Flow 契约：
+Aave V3 使用 Workflow-as-Code `u/oneke/monitors/aave_v3_hf_alert`：
 
 ```text
-Aave GraphQL Source
-  → evaluate_aave_health（执行规则、写状态）
-  → MonitorOutput
+aave_v3_users_positions（发现主网并按用户查询仓位）
+  → aave_v3_hf（逐用户判断 HF 并渲染告警）
+  → notification（Telegram 和 FlashDuty）
 ```
 
-Rule 内部计算并保存完整的 MonitorState，但对外只返回：
+Rule 返回 `{level, title, description}` 或 `null`；WAC 只通知非空结果，并返回告警数组。
+市场阈值由 `thresholds` 覆盖 `defaultThreshold`，默认忽略启用 eMode 的市场。
+此 WAC 不使用下面的 MonitorState 仓位状态机。
 
-```ts
-type AaveHealthOutput = {
-  matched: boolean;
-  messages: Array<{
-    title: string;
-    description: string;
-    fields?: Record<string, unknown>;
-  }>;
-  fields: {
-    user: string;
-    markets: Record<string, unknown>;
-  };
-};
-```
-
-通用 Position Risk Engine 支持五类 OR 关系风险信号：当前 HF 低于市场阈值、窗口内 HF
+Aave V4、Morpho 和 Spark 使用的通用 Position Risk Engine 支持五类 OR 关系风险信号：当前 HF 低于市场阈值、窗口内 HF
 下降百分比、窗口内债务增长百分比、由 `1 - 1/HF` 估算的清算缓冲，以及可配置的统一压力场景。
 趋势首次执行只建立基线；达到窗口后才判断。历史按分钟去重，最长窗口限制为 1440 分钟。
 每个“规则 × 仓位”独立保存 active 状态。`risk_options` 支持 HF 恢复迟滞和定时重复提醒；

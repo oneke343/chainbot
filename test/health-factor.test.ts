@@ -315,7 +315,7 @@ test("Aave native queries discover mainnets then request explicitly selected cha
   assert.match(positions, /\$chain_ids: \[ChainId!\]!/);
   assert.match(positions, /chainIds: \$chain_ids/);
   assert.match(positions, /healthFactor \{current\}/);
-  const v3 = readFileSync(new URL("../f/aave/scripts/sources/aave_market_positions.gql", import.meta.url), "utf8");
+  const v3 = readFileSync(new URL("../f/aave/sources/aave_v3_users_positions__mod/aave_v3_user_positions.gql", import.meta.url), "utf8");
   assert.match(v3, /totalDebtBase/);
   assert.match(v3, /totalCollateralBase/);
   assert.match(v3, /address/);

@@ -15,7 +15,6 @@ import {
   resolveRootFlowPath,
 } from "../f/chain_sentinel/lib/monitor-state.ts";
 import { renderMessage } from "../f/chain_sentinel/lib/render-message.ts";
-import { evaluateAaveHealth } from "../f/aave/scripts/rules/evaluate_aave_health.ts";
 import {
   evaluateSpotPriceChange,
   type BinancePriceInputs,
@@ -205,59 +204,6 @@ test("REST Source composes one Resource with per-run request data", async () => 
   assert.equal(captured.init.body, '{"user":"0xabc"}');
 });
 
-test("Aave Rules evaluate configured markets from current Source inputs", async () => {
-  const inputs = {
-    aave_market_positions: {
-      markets: [
-        {
-          name: "Ethereum Core",
-          address: `0x${"1".repeat(40)}`,
-          chain: { chainId: 1, name: "Ethereum" },
-          userState: { healthFactor: "1.04", totalDebtBase: "100", totalCollateralBase: "150" },
-        },
-        {
-          name: "Base Core",
-          address: `0x${"2".repeat(40)}`,
-          chain: { chainId: 8453, name: "Base" },
-          userState: { healthFactor: null },
-        },
-        {
-          name: "Not Configured",
-          address: `0x${"3".repeat(40)}`,
-          chain: { chainId: 10, name: "OP Mainnet" },
-          userState: { healthFactor: "0.5" },
-        },
-      ],
-    },
-  };
-
-  const result = await evaluateAaveHealth(
-    inputs,
-    `0x${"4".repeat(40)}`,
-    { "Ethereum Core": 1.1, "Base Core": 1.05, Missing: 1.2 },
-  );
-
-  assert.equal(result.output.matched, true);
-  const positions = result.output.fields.positions as Array<{market_name: string; breached: boolean}>;
-  assert.equal(positions.length, 1);
-  assert.equal(positions[0].market_name, "Ethereum Core");
-  assert.equal(positions[0].breached, true);
-  assert.deepEqual(result.output.fields.unused_thresholds, ["Missing"]);
-  assert.equal(result.states.breached_count, 1);
-  assert.equal(result.output.messages?.length, 1);
-  assert.equal(result.output.messages[0].title, "Aave V3 position risk: health_factor_threshold");
-  assert.match(result.output.messages[0].description, /HF threshold: 1\.1/);
-  assert.equal(result.output.messages[0].fields?.finding_id, `health_factor:1:0x${"1".repeat(40)}`);
-
-  const withDefault = evaluateAaveHealth(
-    inputs, `0x${"4".repeat(40)}`, { "Ethereum Core": 1.1 }, 1,
-  );
-  assert.deepEqual(
-    (withDefault.output.fields.positions as Array<{ market_name: string }>).map((item) => item.market_name),
-    ["Not Configured", "Ethereum Core"],
-  );
-});
-
 test("Binance Source keeps only fresh closed one-minute klines", () => {
   const response = [
     rawBinanceKline(0, "100"),
@@ -405,7 +351,6 @@ test("AlertPolicy produces multiple AlertMessages without knowing Destinations",
 test("Root Flows pass all AlertPolicy messages to batch Destinations", () => {
   const paths = [
     "../u/oneke/binance_btcusdt_price_monitor__flow/flow.yaml",
-    "../u/oneke/0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3/aave_v3_hf_monitor__flow/flow.yaml",
     "../u/oneke/0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3/aave_v4_hf_monitor__flow/flow.yaml",
     "../u/oneke/0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3/morpho_hf_monitor__flow/flow.yaml",
   ];

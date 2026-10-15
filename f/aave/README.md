@@ -12,8 +12,9 @@
 并行查询用户，返回按用户地址索引的仓位。查询位于
 `sources/aave_v3_users_positions__mod/`，类型从 `lib/v3-types.ts` 导入；CLI preview 自动携带查询模块，无需单独部署查询脚本。
 
-V3 保留 `flows/aave_health__flow`，并增加可选 `default_threshold`；未提供时保持只监控显式
-`market_thresholds` 的兼容行为，提供后所有借款部署自动使用默认值。
+V3 使用 `u/oneke/monitors/aave_v3_hf_alert`：通过 `sources/aave_v3_users_positions` 采集，
+再逐用户调用 `rules/aave_v3_hf`，将非空告警交给 `u/oneke/channels/notification`。
+`thresholds` 按市场名称覆盖 `defaultThreshold`，默认忽略启用 eMode 的市场。
 V4 使用 `flows/aave_v4_health__flow`，按用户在每个 Spoke 的整体账户监控 HF。
 
 ## V4 参数
@@ -66,8 +67,7 @@ aave_v4_chains.gql → aave_v4_user_positions.gql → evaluate_aave_v4_health �
 - 协议 Rule 将数据规范化为通用 `HealthInputs`，读取旧 MonitorState，调用通用 HF 状态机，
   再保存 `{inputs, states, outputs}`。每个新触发仓位产生一个候选消息，返回
   `{matched, messages, fields}`。
-- Aave V3 Source 同时读取 `totalDebtBase` 和 `totalCollateralBase`，因此也能使用债务增长规则；
-  Aave V4 使用 API 的 USD value。趋势规则首次运行只记录基线，达到配置窗口后再判断。
+- Aave V4 使用 API 的 USD value 判断债务增长。趋势规则首次运行只记录基线，达到配置窗口后再判断。
 - 字段整理、网络与持仓地址校验都放在现有 Rule 内，不新增转换节点。MonitorState 的
   `inputs` 保存两个 GraphQL Source 合并后的原始 `chains` 和 `userPositions`；
   标准化后的仓位和实际生效阈值在输出 `fields.positions` 中。
@@ -83,7 +83,7 @@ Destination 批量发送，不再包含 `forloopflow`。
 
 ## Position Monitor 扩展边界
 
-Aave V3/V4 都显式实现 `HealthPositionAdapter`。未来其他协议接入时，协议目录只负责：
+Aave V4、Morpho 和 Spark 使用 `HealthPositionAdapter`。未来其他协议接入时，协议目录只负责：
 
 1. 用原生 GraphQL 或其他 Source 获取用户仓位；
 2. 为每个风险账户产生稳定 `position.id`；
