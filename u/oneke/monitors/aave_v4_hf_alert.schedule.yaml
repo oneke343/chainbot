@@ -1,12 +1,12 @@
 summary: Check Aave V4 health factors every three minutes
 args:
+  api: $res:f/aave/resources/aave_v4
+  ltvThreshold: 90
   users:
     - '0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3'
     - '0xa5B6ceBB8343253c6f4d73333dA6d110A3fa9406'
     - '0x294126Dd00a23121da702D18924ea15A6702B3C6'
     - '0xA60E23B47b13362399F1e803e5A28fc3A127a5b4'
-  api: $res:f/aave/resources/aave_v4
-  ltvThreshold: 90
 cron_version: v2
 enabled: true
 is_flow: false
@@ -14,3 +14,4 @@ no_flow_overlap: true
 schedule: 1 */3 * * * *
 script_path: u/oneke/monitors/aave_v4_hf_alert
 timezone: Asia/Shanghai
+ws_error_handler_muted: false
