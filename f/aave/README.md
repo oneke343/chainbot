@@ -1,5 +1,16 @@
 # Aave monitors
 
+## GraphQL 类型生成
+
+在项目根目录运行 `bun run codegen`，递归扫描 `f/aave/**/*.gql`，在每个查询旁生成
+同名的 `.types.ts`，包含该查询的返回值与变量类型。修改查询后重新运行，生成文件不要手改。
+`aave_v4_` 开头的文件使用 V4 schema，其余文件使用 V3 schema；生成过程需要联网读取 schema。
+配置在根目录 `codegen.ts`，地址、金额、时间等自定义 scalar 的 TypeScript 映射也在该文件中。
+
+`sources/aave_v3_users_positions.ts` 使用 `taskScript("./aave_v3_user_positions.gql")`
+并行查询用户，返回按用户地址索引的仓位。查询及对应 `.types.ts` 位于
+`sources/aave_v3_users_positions__mod/`；CLI preview 自动携带这些模块，无需单独部署查询脚本。
+
 V3 保留 `flows/aave_health__flow`，并增加可选 `default_threshold`；未提供时保持只监控显式
 `market_thresholds` 的兼容行为，提供后所有借款部署自动使用默认值。
 V4 使用 `flows/aave_v4_health__flow`，按用户在每个 Spoke 的整体账户监控 HF。

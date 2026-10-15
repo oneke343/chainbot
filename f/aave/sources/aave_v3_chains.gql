@@ -1,0 +1,6 @@
+query AaveV3Chains {
+    chains(filter: MAINNET_ONLY) {
+        chainId
+        name
+    }
+}

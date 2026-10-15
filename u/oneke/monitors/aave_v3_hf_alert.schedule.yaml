@@ -1,0 +1,13 @@
+summary: Check Aave V3 health factors every three minutes
+args:
+  users:
+    - '0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3'
+  api: $res:f/aave/resources/aave_v3
+  ignoreEModeEnabledMarkets: true
+cron_version: v2
+enabled: true
+is_flow: false
+no_flow_overlap: true
+schedule: 0 */3 * * * *
+script_path: u/oneke/monitors/aave_v3_hf_alert
+timezone: Asia/Shanghai
