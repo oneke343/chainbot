@@ -5,23 +5,33 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
 const documents = globSync("f/aave/**/*.gql").sort();
 
 const config: CodegenConfig = {
-  generates: Object.fromEntries(
-    ["v3", "v4"].map((version) => [
-      `f/aave/lib/${version}-types.ts`,
-      {
-        schema: `https://api.${version}.aave.com/graphql`,
-        documents: documents.filter((document) =>
-          (document.includes("/sources/v4/") || basename(document).startsWith("aave_v4_")) === (version === "v4")
-        ),
-        plugins: ["typescript-operations"],
-      },
-    ]),
-  ),
+  generates: {
+    ...Object.fromEntries(
+      ["v3", "v4"].map((version) => [
+        `f/aave/lib/${version}-types.ts`,
+        {
+          schema: `https://api.${version}.aave.com/graphql`,
+          documents: documents.filter((document) =>
+            (document.includes("/sources/v4/") || basename(document).startsWith("aave_v4_")) === (version === "v4")
+          ),
+          plugins: ["typescript-operations"],
+        },
+      ]),
+    ),
+    "f/morpho/lib/types.ts": {
+      schema: "https://api.morpho.org/graphql",
+      documents: ["f/morpho/**/*.gql"],
+      plugins: ["typescript-operations"],
+    },
+  },
   config: {
     useTypeImports: true,
     defaultScalarType: "unknown",
     scalars: {
       ID: "string",
+      Address: "string",
+      MarketId: "string",
+      HexString: "string",
       EvmAddress: "string",
       ChainId: "number",
       BigDecimal: "string",

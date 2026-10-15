@@ -1,0 +1,24 @@
+query MorphoUsersPositions($users: [String!]!, $skip: Int!) {
+  marketPositions(
+    first: 1000
+    skip: $skip
+    where: {
+      userAddress_in: $users
+      chainId_in: null
+      borrowShares_gte: "1"
+    }
+  ) {
+    items {
+      user { address }
+      healthFactor
+      market {
+        marketId
+        lltv
+        chain { id network }
+        loanAsset { symbol }
+        collateralAsset { symbol }
+      }
+    }
+    pageInfo { countTotal }
+  }
+}
