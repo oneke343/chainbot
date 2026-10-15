@@ -7,7 +7,7 @@
 - `f/chain_sentinel/lib` 提供共享的 MonitorState 函数和类型。
 - `f/aave/scripts` 与 `f/aave/flows` 提供 Aave Monitor Sources、Rules 和 Flow。
 - `f/binance/scripts` 与 `f/binance/flows` 提供币安现货价格 Monitor。
-- `f/morpho/scripts` 与 `f/morpho/flows` 提供跨网络 Morpho Blue 用户借款仓位 HF Monitor。
+- `f/morpho/sources` 与 `f/morpho/rules` 提供 Morpho Blue HF 告警组件；`scripts` 与 `flows` 保留清算和市场风险 Monitor。
 - `f/aave/resources` 保存 Aave 示例 Resource。
 - `f/binance/resources` 保存币安公共行情示例 Resource。
 - 用户自己创建 Root Flow，组合 Monitor Flow、AlertPolicy、Destinations 和任意 Windmill Trigger。
@@ -93,18 +93,10 @@ Resource Type。
 
 ## 通用 Position Risk Monitor
 
-现有的 [Aave Monitor](f/aave/README.md)、[Morpho Monitor](f/morpho/README.md) 和
-[SparkLend Monitor](f/spark/README.md)
-自动发现用户跨网络的全部 API 已索引借款仓位，支持 `default_threshold` 与按可读市场名称
-配置的 `market_thresholds`。两者都使用原生 GraphQL Source 和 TypeScript Rule：
-Aave V4 三个 YAML Flow 节点（主网发现 → 仓位查询 → Rule），Morpho 两个节点（查询 → Rule）。
-各协议实例应使用不同根 Flow，避免写入相同的 MonitorState。协议必须实现
-`HealthPositionAdapter<Source>`，把原始 Source 结果规范化为 `HealthInputs`，然后复用
-`f/chain_sentinel/lib/health-factor.ts` 中的通用仓位状态机。未来增加 Fluid 等协议时，只需新增
-协议 Source、Adapter 和轻量 Rule wrapper，不复制阈值、趋势、去重和消息治理逻辑。
-Morpho 使用原生 `.gql` 一次获取最多 1000 个仓位，Rule 检查返回数量是否完整；超限报错，
-不静默漏监控、不自动分页。Aave V4 要求非空网络列表，因此先用独立 `.gql` 查询发现主网，
-再把网络 ID 传给仓位查询，不写死链列表。
+[Aave Monitor](f/aave/README.md) 和 [Morpho Monitor](f/morpho/README.md) 使用
+Source → HF Rule → notification 的 Workflow-as-Code，支持多用户查询。Morpho Source
+批量查询用户并分页收集全部借款仓位；Rule 使用 `thresholds`、`defaultThreshold` 和
+`ltvThreshold`，忽略 LLTV 达到或超过阈值的市场。
 
 Aave V3 使用 Workflow-as-Code `u/oneke/monitors/aave_v3_hf_alert`：
 
@@ -116,53 +108,7 @@ sources/v3/users_positions（发现主网并按用户查询仓位）
 
 Rule 返回 `{level, title, description}` 或 `null`；WAC 只通知非空结果，并返回告警数组。
 市场阈值由 `thresholds` 覆盖 `defaultThreshold`，默认忽略启用 eMode 的市场。
-此 WAC 不使用下面的 MonitorState 仓位状态机。
-
-Aave V4、Morpho 和 Spark 使用的通用 Position Risk Engine 支持五类 OR 关系风险信号：当前 HF 低于市场阈值、窗口内 HF
-下降百分比、窗口内债务增长百分比、由 `1 - 1/HF` 估算的清算缓冲，以及可配置的统一压力场景。
-趋势首次执行只建立基线；达到窗口后才判断。历史按分钟去重，最长窗口限制为 1440 分钟。
-每个“规则 × 仓位”独立保存 active 状态。`risk_options` 支持 HF 恢复迟滞和定时重复提醒；
-趋势规则支持 `rearm_percent`。历史按实际时间戳取窗口基线且每个仓位硬限制 120 个样本。
-
-`message_policy.max_messages` 限制一次运行最多返回 1 到 100 条消息，默认 20；溢出策略
-`summary` 会保留前面的明细并用最后一条汇总其余 finding，`truncate` 则只截断。完整仓位和
-finding 仍保存在 `MonitorOutput.fields`。Rule 不决定 severity，也不知道 Destination。
-
-示例高级规则：
-
-```yaml
-risk_rules:
-  - id: hf_drop_5m
-    kind: health_factor_drop
-    window_minutes: 5
-    threshold_percent: 10
-  - id: debt_up_15m
-    kind: debt_growth
-    window_minutes: 15
-    threshold_percent: 20
-    min_debt_usd: 100
-  - id: liquidation_buffer_15
-    kind: liquidation_buffer
-    threshold_percent: 15
-stress_rules:
-  - id: collateral_down_10
-    collateral_change_percent: -10
-    debt_change_percent: 0
-    threshold: 1.05
-risk_options:
-  rearm_health_factor_margin: 0.05
-  repeat_interval_minutes: 60
-message_policy:
-  max_messages: 20
-  overflow: summary
-```
-
-`u/oneke` 的三个仓位实例已经启用 5/30 分钟 HF 下降、5/30/60 分钟债务增长和 -10% 抵押品
-压力场景；这些是起始阈值，仍应按账户风险偏好调整。
-`liquidation_buffer` 是假设其他条件不变时由 HF 推导的抵押品价格下跌缓冲估算，不是完整的
-多资产压力测试。`stress_rules` 使用
-`stressedHF = currentHF × (1 + collateralChange) ÷ (1 + debtChange)`；Morpho 单抵押品市场含义较清晰，
-Aave 组合仓位仍是统一冲击近似值，输出会标记 `approximate: true`。
+此 WAC 不读写 MonitorState。
 
 ## 清算事件与 Market Risk
 
@@ -179,7 +125,7 @@ Aave 组合仓位仍是统一冲击近似值，输出会标记 `approximate: tru
 `chainId + txHash + logIndex` 和每链最新 block；若返回页与旧游标不再重叠则失败，避免静默漏事件。
 Aave API 没有在这些查询中提供 block/log index，因此使用协议活动 ID 或交易哈希及分页重叠保护。
 
-Position、Liquidation 和 Market Risk 都会写 `{ROOT_FLOW_PATH}/__monitor_state`，必须分别放在独立
+Liquidation 和 Market Risk 都会写 `{ROOT_FLOW_PATH}/__monitor_state`，必须分别放在独立
 Root Flow 中，不能把多个有状态 Monitor 子 Flow 串在同一 Root Flow 下。Root Flow 再统一接
 AlertPolicy 和批量 Destination。
 
@@ -224,7 +170,6 @@ f/
       sources/           # 通用 Sources
     lib/
       destination-batch.ts # Destination 内部的有界批量投递
-      health-factor.ts     # Adapter 契约、统一仓位风险规则和历史状态
       liquidation-events.ts # 清算事件游标、去重和消息
       market-risk.ts       # Oracle、坏账、流动性、利用率与 Cap 状态机
       monitor-state.ts   # get/set MonitorState 等共享函数与类型
@@ -240,9 +185,6 @@ f/
     scripts/
       sources/            # 已关闭的 1 分钟现货 K 线
       rules/              # 百分比变化、OR、去重与恢复
-  spark/                  # SparkLend RPC Source、Adapter、Rule 和 Monitor Flow
-    flows/                # 两节点 SparkLend Monitor Flow
-    resources/            # SparkLend Pool/RPC Resource
 ```
 
 `lib` 中的 `.script.yaml` / `.script.lock` 是 `wmill generate-metadata` 为同步和依赖解析生成的

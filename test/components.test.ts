@@ -351,7 +351,6 @@ test("AlertPolicy produces multiple AlertMessages without knowing Destinations",
 test("Root Flows pass all AlertPolicy messages to batch Destinations", () => {
   const paths = [
     "../u/oneke/binance_btcusdt_price_monitor__flow/flow.yaml",
-    "../u/oneke/0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3/morpho_hf_monitor__flow/flow.yaml",
   ];
   for (const path of paths) {
     const flow = readFileSync(new URL(path, import.meta.url), "utf8");

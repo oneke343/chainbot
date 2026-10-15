@@ -1,4 +1,10 @@
 declare namespace RT {
+  interface Binance {
+    url: string;
+    api_key: string;
+    api_secret: string;
+  }
+
   interface Graphql {
     base_url: string;
     bearer_token?: string;
@@ -17,18 +23,6 @@ declare namespace RT {
   interface Flashduty {
     url: string;
     integration_key: string;
-  }
-
-  interface SparkLend {
-    markets: Array<{
-      name: string;
-      chain_id: number;
-      chain_name: string;
-      pool_address: string;
-      rpc_url: string;
-      rpc_headers?: Record<string, string>;
-      base_currency_decimals?: number;
-    }>;
   }
 
   interface AlertMessage {

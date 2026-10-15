@@ -3,7 +3,7 @@ includes:
   - f/aave/**
   - f/binance/**
   - f/morpho/**
-  - f/spark/**
+  - f/spark/** # Retain sync scope until remote deletion is deployed.
   - f/chain_sentinel/**
   - f/wmm/**
   - f/handlebars/**
@@ -13,9 +13,13 @@ excludes: [
 ]
 skipVariables: false
 skipResources: false
-skipResourceTypes: true
+skipResourceTypes: false
 skipSecrets: true
 includeSchedules: true
-includeTriggers: false
+includeTriggers: true
 nonDottedPaths: true
 syncBehavior: v1
+workspaces:
+  chainbot:
+    baseUrl: https://windmill.yeap.capital/
+    gitBranch: main

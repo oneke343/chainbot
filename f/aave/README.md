@@ -46,17 +46,6 @@ thresholds:
 每个命中用户返回一条包含用户、Spoke、网络、HF、配置抵押因子和实际阈值的 error 消息。
 WAC 将非空消息交给 `u/oneke/channels/notification`，发送 Telegram 和 FlashDuty，并返回告警数组。
 
-## Position Monitor 扩展边界
-
-Morpho 和 Spark 使用 `HealthPositionAdapter`。未来其他协议接入时，协议目录只负责：
-
-1. 用原生 GraphQL 或其他 Source 获取用户仓位；
-2. 为每个风险账户产生稳定 `position.id`；
-3. 转换成通用 `HealthInputs`；
-4. 调用通用 HF 状态机并渲染协议名称。
-
-阈值覆盖、HF 下降、债务增长、清算缓冲、统一压力场景、rearm 和消息上限保持在 `chain_sentinel`。
-
 ## 第二轮 Flows
 
 - `aave_v3_liquidations` 按 V3 Pool 地址、chain ID 和用户查询最近 50 条真实 liquidation call。

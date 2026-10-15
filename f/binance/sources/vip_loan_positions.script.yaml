@@ -1,0 +1,19 @@
+summary: Fetch Binance VIP loan positions
+description: Fetch all ongoing VIP loan orders with signed, paginated requests.
+lock: '!inline f/binance/sources/vip_loan_positions.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    connection:
+      type: object
+      format: resource-binance
+    loan_coin:
+      type: string
+      originalType: string
+    collateral_coin:
+      type: string
+      originalType: string
+  required:
+    - connection

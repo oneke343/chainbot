@@ -1,4 +1,24 @@
-# Binance Spot Price Monitor
+# Binance Sources and Monitors
+
+## VIP loan positions
+
+`f/binance/sources/vip_loan_positions` fetches all ongoing VIP loan orders from
+`GET /sapi/v1/loan/vip/ongoing/orders`. Pass a `binance` Resource containing
+`url`, `api_key`, and `api_secret`, with optional `loan_coin` and `collateral_coin`
+filters. Set `url` to the API base URL, normally `https://api.binance.com`.
+Store credentials through Windmill secret variables.
+
+The result contains only `positions`.
+Position fields follow Binance's response, with `orderId` serialized as a string
+without precision loss. Decimal strings and collateral lists remain unchanged.
+Pages are fetched sequentially with a one-second interval. Request and parsing
+errors propagate; the Source does not retry, store history, or evaluate alerts.
+
+The local `binance.resource-type.yaml` defines the credentials schema. Resource
+types are excluded from this repository's sync, so register it in the workspace
+before configuring a credentials Resource.
+
+## Spot price monitor
 
 本目录实现币安现货交易对的分钟级价格变化监控。它是一个 Monitor-specific Project，只包含
 币安行情 Source、价格规则和 Monitor Flow；AlertPolicy 与 Destination 继续复用
