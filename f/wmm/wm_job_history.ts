@@ -31,7 +31,7 @@ export async function* getJobHistory(
   for (let page = 1; ; page++) {
     const jobs = await JobService.listCompletedJobs({
       workspace,
-      jobKinds: kind,
+      jobKinds: kind ?? "script,flow",
       scriptPathExact: path,
       args,
       startedAfter,
@@ -45,7 +45,9 @@ export async function* getJobHistory(
 
     for (const candidate of jobs) {
       const job = await JobService.getCompletedJob({ workspace, id: candidate.id });
-
+      if (!["script", "flow"].includes(job.job_kind)) {
+        continue; // Skip jobs that are not scripts or flows.
+      }
       // Windmill filters by JSON containment; compare the full input for an exact match.
       if (input !== undefined && !isDeepStrictEqual(job.args ?? {}, input)) continue;
       if (job.result === "WINDMILL_TOO_BIG") {
