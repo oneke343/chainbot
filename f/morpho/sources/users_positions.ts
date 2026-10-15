@@ -2,7 +2,7 @@ import { taskScript, workflow } from "windmill-client";
 import type { MorphoUserPosition } from "./types.ts";
 import type { MorphoUsersPositionsQuery } from "../lib/types.ts";
 
-const queryUserPositions = taskScript("./user_positions.gql");
+const queryUserPositions = taskScript("f/morpho/sources/user_positions");
 
 export const main = workflow(async (
     users: string[],

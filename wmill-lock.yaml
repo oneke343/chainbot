@@ -21,8 +21,8 @@ locks:
   f/aave/scripts/sources/aave_v4_user_liquidations: c37fbfe9693e267ebeb3f726ed3940f030568849448a812124537272f419b366
   f/aave/sources/v3/chains: f8f4bd9836e8adb534848493a333e4b751e80e48bcdadd23297ca3824b2f13c0
   f/aave/sources/v3/types: 201120e3c5aa830ebd2778e0cec8cd441db3edb14658e7f4cbd23ec522267530
-  f/aave/sources/v3/users_positions+__script_hash: edd8e12ae2e36b8b2ba2cdb450d3e5bfa7d66f1832fd4184322cba10c71d1f49
-  f/aave/sources/v3/users_positions+user_positions.gql: c2632e690a1d70384b7496c81f7447b75827a547cf130ebd306755f75890fea2
+  f/aave/sources/v3/user_positions: e94731f8bf95d9201361d74e2883b43c1d9991fb8ad6e285a00ec4d526704c87
+  f/aave/sources/v3/users_positions: 01c1889caf02f4e38ac848f2d6cf7813bfa94a09b958d69d655292664366dca8
   f/aave/sources/v4/chains: 500a9831b88b4c78f16673557035b88d96f6b3bd7ad285d1dca7cc06419b68b1
   f/aave/sources/v4/market_params: 5bcd97f2222443321c7658e25b8ab38f3b70859e2e13e5a48adc76f93b7aa66f
   f/aave/sources/v4/market_params_inventory: 0452fe2255265059f86dfc5eae3c7aab188f9e7a02e4858dab1cd5c536f14e80
@@ -66,8 +66,8 @@ locks:
   f/morpho/scripts/sources/morpho_user_liquidations: 346257d05c9faca8f100e0f2fb3d2aed466ac0bf063edbb383da09ba32dffbac
   f/morpho/scripts/sources/morpho_user_positions: d4077fd5bf13a695f8e19f7874c1ba650ca11266da0ce7712d49624606261579
   f/morpho/sources/types: 970f0627ca1b0cf8e38a2cfe13afecd74765800c83bb239be9d072dd2b26807d
-  f/morpho/sources/users_positions+__script_hash: ea9daa1145b3c4ebb7f4c633a3e60537766b5af3102a309dd0faed93b34747ca
-  f/morpho/sources/users_positions+user_positions.gql: c25fe17b10001c4154bd0fe7cf7029051bc38f725fd8cd5378c8e07b1669d57a
+  f/morpho/sources/user_positions: 9cba65972913bee4ad6e97e0ad53cb22f0757733662824b35fa069bcf854b50e
+  f/morpho/sources/users_positions: 001c62638f321757dd2acc99a4cf3d06a810a5821e98f750167b37fa4c9c1409
   f/spark/flows/spark_health__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
   f/spark/scripts/rules/evaluate_spark_health: 7b7c1a2484527452fc982a634891d44d2c9f8ff9b6692d043889c85d0dff4815
   f/spark/scripts/sources/spark_user_positions: c4926c7d5880f8e24befcf9013161b5c842e13930cb0857516f61d4a420870cc

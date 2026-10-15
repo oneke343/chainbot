@@ -11,9 +11,10 @@
 
 Source 仓位类型分别定义在 `sources/v3/types.ts` 和 `sources/v4/types.ts`。
 
-`sources/v3/users_positions.ts` 使用 `taskScript("./user_positions.gql")`
+`sources/v3/users_positions.ts` 使用 `taskScript("f/aave/sources/v3/user_positions")`
 并行查询用户，返回按用户地址索引的仓位。查询位于
-`sources/v3/users_positions__mod/`，类型从 `lib/v3-types.ts` 导入；CLI preview 自动携带查询模块，无需单独部署查询脚本。
+`sources/v3/user_positions.gql`，类型从 `lib/v3-types.ts` 导入。查询是独立 Windmill Script，
+预览或运行 WAC 前需要部署该查询脚本。
 
 V3 使用 `u/oneke/monitors/aave_v3_hf_alert`：通过 `sources/v3/users_positions` 采集，
 再逐用户调用 `rules/aave_v3_hf`，将非空告警交给 `u/oneke/channels/notification`。

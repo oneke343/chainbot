@@ -1,0 +1,22 @@
+summary: Query Morpho borrowing positions for multiple users
+description: Native GraphQL query for one page of borrowing positions across all networks.
+lock: ''
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    api:
+      type: object
+      format: resource-graphql
+    users:
+      type: array
+      items:
+        type: string
+    skip:
+      type: integer
+      minimum: 0
+  required:
+    - api
+    - users
+    - skip

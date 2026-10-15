@@ -2,8 +2,7 @@ import { taskScript, workflow } from "windmill-client";
 import type { AaveV3UserPosition } from "./types.ts";
 import type { AaveMarketPositionsQuery } from "../../lib/v3-types.ts";
 
-// Relative module references include the packaged file's extension.
-const queryUserPositions = taskScript("./user_positions.gql");
+const queryUserPositions = taskScript("f/aave/sources/v3/user_positions");
 const queryAaveV3Chains = taskScript("f/aave/sources/v3/chains", { cache_ttl: 60 * 60 * 24 }); // Cache for 1 day
 export const main = workflow(async (
     users: string[],

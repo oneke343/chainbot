@@ -30,11 +30,12 @@ thresholds:
 `ltvThreshold` 是百分比，默认 `90`。市场配置的 LLTV 达到或超过阈值时忽略该仓位，
 作为类似 eMode 的筛选规则。这里使用市场的清算 LLTV，不是用户实际债务／抵押品比值。
 Source 将 `market.lltv` 的 WAD 值除以 `1e16`，在 `lltvPercent` 中返回百分比。
-Source 的伴随查询 `sources/users_positions__mod/user_positions.gql` 使用
+Source 调用独立 GraphQL Script `f/morpho/sources/user_positions`（`sources/user_positions.gql`），使用
 `userAddress_in: $users` 和 `chainId_in: null` 查询全部用户、全部网络，
 每页最多 1000 条，通过 `skip` 翻页，直到读完 `pageInfo.countTotal`。
 按返回的 `user.address` 忽略大小写归组，保留输入地址作为结果 key，没有仓位的用户返回空数组。
 翻页提前返回空页或借款仓位缺少 HF 时执行失败。
+预览或运行 WAC 前需要部署该查询脚本。
 仓位类型位于 `sources/types.ts`，此 WAC 不使用旧 MonitorState。
 
 ## 旧版有状态 Flow

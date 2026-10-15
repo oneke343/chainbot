@@ -8,7 +8,7 @@ const api = { base_url: "https://api.v3.aave.com/graphql" };
 const users = ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"];
 const chains = { chains: [{ chainId: 1, name: "Ethereum" }, { chainId: 8453, name: "Base" }] };
 
-test("user positions workflow dispatches relative GraphQL tasks and returns positions by user", async (t) => {
+test("user positions workflow dispatches standalone GraphQL tasks and returns positions by user", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   t.mock.method(globalThis, "fetch", () => { throw new Error("workflow must dispatch queries through tasks"); });
   wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps: {} }));
@@ -35,7 +35,7 @@ test("user positions workflow dispatches relative GraphQL tasks and returns posi
   assert.notEqual(steps[0].key, steps[1].key);
   for (const [index, step] of steps.entries()) {
     assert.equal(step.dispatch_type, "script");
-    assert.equal(step.script, "./user_positions.gql");
+    assert.equal(step.script, "f/aave/sources/v3/user_positions");
     assert.deepEqual(step.args, { api, user: users[index], chainIds: [1, 8453] });
   }
 
@@ -78,8 +78,8 @@ test("chain and user query failures propagate instead of returning partial posit
     { chains: failure },
     {
       chains: chains,
-      "user_positions.gql": failure,
-      "user_positions.gql_2": { markets: [] },
+      user_positions: failure,
+      user_positions_2: { markets: [] },
     },
   ]) {
     wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));

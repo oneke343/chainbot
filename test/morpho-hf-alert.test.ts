@@ -43,7 +43,7 @@ test("Morpho source batches users, groups case-insensitively, and preserves zero
   const queries = await nextDispatch(run, completed_steps);
   assert.equal(queries.length, 1);
   const [query] = queries;
-  assert.equal(query.script, "./user_positions.gql");
+  assert.equal(query.script, "f/morpho/sources/user_positions");
   assert.equal(query.dispatch_type, "script");
   assert.deepEqual(query.args, { api, users: requestedUsers, skip: 0 });
   completed_steps[query.key] = { marketPositions: {

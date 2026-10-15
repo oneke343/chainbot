@@ -82,6 +82,7 @@ jobs:
             --workspace "${WMILL_WORKSPACE}" \
             sync push \
             --dry-run \
+            --auto-metadata \
             --skip-secrets \
             --skip-branch-validation \
             --json-output > "${plan}"
@@ -102,6 +103,7 @@ jobs:
             --workspace "${WMILL_WORKSPACE}" \
             sync push \
             --yes \
+            --auto-metadata \
             --skip-secrets \
             --skip-branch-validation \
             --lint \
