@@ -17,7 +17,7 @@ value:
                   input_transforms:
                     auth:
                       type: static
-                      value: $res:u/oneke/yeap-bot
+                      value: $res:u/oneke/resources/yeap-bot
                     chat_id:
                       type: javascript
                       expr: variable("u/oneke/channels/telegram_chat_id")
@@ -41,7 +41,7 @@ value:
                   input_transforms:
                     destination:
                       type: static
-                      value: $res:u/oneke/flashcat
+                      value: $res:u/oneke/resources/flashcat
                     messages:
                       type: javascript
                       expr: |

@@ -157,7 +157,7 @@ Source 出错时 Flow 应失败且不更新状态。Destination 应在 Root Flow
 
 `u/oneke/binance_btcusdt_price_monitor` 是 Telegram-only 的 Root Flow，依次调用 Monitor、
 `matched_output` AlertPolicy 和 `send_telegram`，使用上面的三条 BTCUSDT 示例规则，Severity
-为 `warning`。Telegram 使用已有 Resource `u/oneke/yeap-bot` 和现有群聊。
+为 `warning`。Telegram 使用已有 Resource `u/oneke/resources/yeap-bot` 和现有群聊。
 
 对应的 `u/oneke/binance_btcusdt_price_monitor.schedule.yaml` 每分钟触发一次
 （`0 */1 * * * *`，`Asia/Shanghai`），设置 `no_flow_overlap: true` 跳过重叠的定时运行。

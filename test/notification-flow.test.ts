@@ -41,11 +41,11 @@ for (const level of ["info", "warning", "error"]) {
 
 test("Telegram uses the verified Hub integration and existing channel resources", () => {
   assert.equal(telegram.path, "hub/28512/telegram/send_a_text_message_or_reply");
-  assert.deepEqual(telegram.input_transforms.auth, { type: "static", value: "$res:u/oneke/yeap-bot" });
+  assert.deepEqual(telegram.input_transforms.auth, { type: "static", value: "$res:u/oneke/resources/yeap-bot" });
   assert.deepEqual(telegram.input_transforms.chat_id, {
     type: "javascript", expr: 'variable("u/oneke/channels/telegram_chat_id")',
   });
-  assert.deepEqual(flashduty.input_transforms.destination, { type: "static", value: "$res:u/oneke/flashcat" });
+  assert.deepEqual(flashduty.input_transforms.destination, { type: "static", value: "$res:u/oneke/resources/flashcat" });
 });
 
 test("error messages become Critical FlashDuty events with original content", async (t) => {
