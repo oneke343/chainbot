@@ -12,7 +12,7 @@ schema:
       format: resource-graphql
     chain_ids:
       type: array
-      description: Non-empty chain IDs, obtained from aave_v4_chains or supplied explicitly.
+      description: Non-empty chain IDs, obtained from chains or supplied explicitly.
       default: null
       items:
         type: integer

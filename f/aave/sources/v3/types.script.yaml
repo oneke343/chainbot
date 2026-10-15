@@ -1,6 +1,6 @@
 summary: ''
 description: ''
-lock: '!inline f/aave/sources/types.script.lock'
+lock: '!inline f/aave/sources/v3/types.script.lock'
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema

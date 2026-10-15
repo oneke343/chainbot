@@ -109,7 +109,7 @@ Morpho 使用原生 `.gql` 一次获取最多 1000 个仓位，Rule 检查返回
 Aave V3 使用 Workflow-as-Code `u/oneke/monitors/aave_v3_hf_alert`：
 
 ```text
-aave_v3_users_positions（发现主网并按用户查询仓位）
+sources/v3/users_positions（发现主网并按用户查询仓位）
   → aave_v3_hf（逐用户判断 HF 并渲染告警）
   → notification（Telegram 和 FlashDuty）
 ```

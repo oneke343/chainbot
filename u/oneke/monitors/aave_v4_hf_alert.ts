@@ -1,10 +1,10 @@
 import { taskScript, taskFlow, workflow } from "windmill-client";
-import type { AaveV4UserPosition } from "../../../f/aave/sources/types.ts";
+import type { AaveV4UserPosition } from "../../../f/aave/sources/v4/types.ts";
 import type { main as evaluateHF } from "../../../f/aave/rules/aave_v4_hf.ts";
 
 type Alert = NonNullable<Awaited<ReturnType<typeof evaluateHF>>>;
 
-const collectPositions = taskScript("f/aave/sources/aave_v4_users_positions");
+const collectPositions = taskScript("f/aave/sources/v4/users_positions");
 const evaluateHealthFactor = taskScript("f/aave/rules/aave_v4_hf");
 const notify = taskFlow("u/oneke/channels/notification", { timeout: 600 });
 

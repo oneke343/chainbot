@@ -3,8 +3,8 @@ import test from "node:test";
 import * as wmill from "windmill-client";
 import type { ContractFunctionReturnType } from "viem";
 import type { READER_ABI } from "../f/aave/lib/market-params-reader-artifact.ts";
-import { main as source } from "../f/aave/scripts/sources/aave_v4_read_hubs.ts";
-import { main as collectParams } from "../f/aave/scripts/workflows/collect_aave_v4_market_params.ts";
+import { main as source } from "../f/aave/sources/v4/read_hubs.ts";
+import { main as collectParams } from "../f/aave/sources/v4/market_params.ts";
 import type { Address, HubGraph, Snapshots } from "../f/aave/lib/market-params.ts";
 
 // Check the independently declared model against the complete decoded Reader shape.
@@ -81,7 +81,7 @@ test("WAC reads networks in parallel and aggregates checkpoint results by chain 
   assert.equal(inventory.mode, "sequential");
   assert.equal(inventory.steps.length, 1);
   const query = inventory.steps[0];
-  assert.equal(query.script, "f/aave/scripts/sources/aave_v4_market_params_inventory");
+  assert.equal(query.script, "f/aave/sources/v4/market_params_inventory");
   assert.equal(query.dispatch_type, "script");
   assert.deepEqual(query.args, { api, chain_ids: [1, 8453] });
   completed_steps[query.key] = { hubs: [
@@ -93,7 +93,7 @@ test("WAC reads networks in parallel and aggregates checkpoint results by chain 
   assert.equal(reading.mode, "parallel");
   assert.equal(reading.steps.length, 2);
   const [ethereum, base] = reading.steps;
-  assert.equal(ethereum.script, "f/aave/scripts/sources/aave_v4_read_hubs");
+  assert.equal(ethereum.script, "f/aave/sources/v4/read_hubs");
   assert.deepEqual(ethereum.args, { rpc_url: rpc_urls["1"], hub_addresses: [hub, addr("b")] });
   assert.equal(base.script, ethereum.script);
   assert.notEqual(base.key, ethereum.key);
@@ -116,8 +116,8 @@ test("WAC propagates task failures instead of returning a partial snapshot", asy
   const rpc_urls = { "1": "https://ethereum.example", "8453": "https://base.example" };
   const failure = { __wmill_error: true, message: "Reader failed" };
   for (const completed_steps of [
-    { aave_v4_market_params_inventory: failure },
-    { aave_v4_market_params_inventory: { hubs: [] }, aave_v4_read_hubs: snapshot()["1"], aave_v4_read_hubs_2: failure },
+    { market_params_inventory: failure },
+    { market_params_inventory: { hubs: [] }, read_hubs: snapshot()["1"], read_hubs_2: failure },
   ]) {
     const ctx = new wmill.WorkflowCtx({ completed_steps });
     wmill.setWorkflowCtx(ctx);

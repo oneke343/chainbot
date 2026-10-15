@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import wmill, { type WorkflowCtx } from "windmill-client";
 import { main } from "../u/oneke/monitors/aave_v3_hf_alert.ts";
-import type { AaveV3UserPosition } from "../f/aave/sources/types.ts";
+import type { AaveV3UserPosition } from "../f/aave/sources/v3/types.ts";
 
 const users = ["0xalice", "0xbob", "0xcarol"];
 const api = { base_url: "https://api.v3.aave.com/graphql" };
@@ -29,7 +29,7 @@ test("HF alert collects once, evaluates each user and notifies only non-null res
   t.mock.method(globalThis, "fetch", () => { throw new Error("workflow body must only dispatch tasks"); });
   const completed_steps: Record<string, unknown> = {};
   const [source] = await nextDispatch(completed_steps);
-  assert.equal(source.script, "f/aave/sources/aave_v3_users_positions");
+  assert.equal(source.script, "f/aave/sources/v3/users_positions");
   assert.equal(source.dispatch_type, "script");
   assert.deepEqual(source.args, { users, api });
   completed_steps[source.key] = positions;

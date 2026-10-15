@@ -1,6 +1,6 @@
 summary: ''
 description: ''
-lock: '!inline f/aave/sources/aave_v3_users_positions.script.lock'
+lock: '!inline f/aave/sources/v3/users_positions.script.lock'
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema

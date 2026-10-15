@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import wmill, { type WorkflowCtx } from "windmill-client";
-import { main as source } from "../f/aave/sources/aave_v4_users_positions.ts";
+import { main as source } from "../f/aave/sources/v4/users_positions.ts";
 import { main as evaluateHF } from "../f/aave/rules/aave_v4_hf.ts";
 import { main as monitor } from "../u/oneke/monitors/aave_v4_hf_alert.ts";
-import type { AaveV4UserPosition } from "../f/aave/sources/types.ts";
+import type { AaveV4UserPosition } from "../f/aave/sources/v4/types.ts";
 import type { AaveV4UserPositionsQuery } from "../f/aave/lib/v4-types.ts";
 
 const api = { base_url: "https://api.v4.aave.com/graphql" };
@@ -32,7 +32,7 @@ test("V4 source discovers chains and queries users in parallel, preserving zero 
   const completed_steps: Record<string, unknown> = {};
   const run = () => source(users, api);
   const [discovery] = await nextDispatch(run, completed_steps);
-  assert.equal(discovery.script, "f/aave/scripts/sources/aave_v4_chains");
+  assert.equal(discovery.script, "f/aave/sources/v4/chains");
   assert.equal(Reflect.get(discovery, "cache_ttl"), 86400);
   assert.deepEqual(discovery.args, { api });
   completed_steps[discovery.key] = chains;
@@ -45,7 +45,7 @@ test("V4 source discovers chains and queries users in parallel, preserving zero 
     spoke: { name: "Main", address: "0xspoke", chain: { chainId: 1, name: "Ethereum" } },
   }] }));
   for (const [index, query] of queries.entries()) {
-    assert.equal(query.script, "f/aave/scripts/sources/aave_v4_user_positions");
+    assert.equal(query.script, "f/aave/sources/v4/user_positions");
     assert.equal(query.dispatch_type, "script");
     assert.deepEqual(query.args, { api, user: users[index], chain_ids: [1, 8453] });
     completed_steps[query.key] = results[index];
@@ -107,7 +107,7 @@ test("V4 alert evaluates users, checkpoints notifications only for breaches and 
   const run = () => monitor(users, api, thresholds, "1.15", 85);
   const completed_steps: Record<string, unknown> = {};
   const [collection] = await nextDispatch(run, completed_steps);
-  assert.equal(collection.script, "f/aave/sources/aave_v4_users_positions");
+  assert.equal(collection.script, "f/aave/sources/v4/users_positions");
   assert.deepEqual(collection.args, { users, api });
   completed_steps[collection.key] = {
     [users[0]]: [position], [users[1]]: [{ ...position, healthFactor: "2" }],

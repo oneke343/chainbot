@@ -1,7 +1,7 @@
 summary: Collect Aave V4 market params
 description: Query Hubs through native GraphQL, read networks in parallel through
   multicall at latest, and return Reader-shaped snapshots.
-lock: '!inline f/aave/scripts/workflows/collect_aave_v4_market_params.script.lock'
+lock: '!inline f/aave/sources/v4/market_params.script.lock'
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema

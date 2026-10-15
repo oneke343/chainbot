@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import wmill, { type WorkflowCtx } from "windmill-client";
-import { main } from "../f/aave/sources/aave_v3_users_positions.ts";
+import { main } from "../f/aave/sources/v3/users_positions.ts";
 import type { AaveMarketPositionsQuery } from "../f/aave/lib/v3-types.ts";
 
 const api = { base_url: "https://api.v3.aave.com/graphql" };
@@ -21,7 +21,7 @@ test("user positions workflow dispatches relative GraphQL tasks and returns posi
   });
   assert.equal(steps.length, 1);
   const chainQuery = steps[0];
-  assert.equal(chainQuery.script, "f/aave/sources/aave_v3_chains");
+  assert.equal(chainQuery.script, "f/aave/sources/v3/chains");
   assert.deepEqual(chainQuery.args, { api });
   assert.equal(Reflect.get(chainQuery, "cache_ttl"), 86400);
   wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps: { [chainQuery.key]: chains } }));
@@ -35,7 +35,7 @@ test("user positions workflow dispatches relative GraphQL tasks and returns posi
   assert.notEqual(steps[0].key, steps[1].key);
   for (const [index, step] of steps.entries()) {
     assert.equal(step.dispatch_type, "script");
-    assert.equal(step.script, "./aave_v3_user_positions.gql");
+    assert.equal(step.script, "./user_positions.gql");
     assert.deepEqual(step.args, { api, user: users[index], chainIds: [1, 8453] });
   }
 
@@ -65,7 +65,7 @@ test("user positions workflow dispatches relative GraphQL tasks and returns posi
 
 test("empty user list returns no positions or user queries after chain discovery", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
-  const ctx = new wmill.WorkflowCtx({ completed_steps: { aave_v3_chains: chains } });
+  const ctx = new wmill.WorkflowCtx({ completed_steps: { chains: chains } });
   wmill.setWorkflowCtx(ctx);
   assert.deepEqual(await main([], api), {});
   assert.deepEqual(ctx._flushPending(), []);
@@ -75,11 +75,11 @@ test("chain and user query failures propagate instead of returning partial posit
   t.after(() => wmill.setWorkflowCtx(null));
   const failure = { __wmill_error: true, message: "Query failed" };
   for (const completed_steps of [
-    { aave_v3_chains: failure },
+    { chains: failure },
     {
-      aave_v3_chains: chains,
-      "aave_v3_user_positions.gql": failure,
-      "aave_v3_user_positions.gql_2": { markets: [] },
+      chains: chains,
+      "user_positions.gql": failure,
+      "user_positions.gql_2": { markets: [] },
     },
   ]) {
     wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));

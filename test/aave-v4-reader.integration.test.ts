@@ -7,7 +7,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import jsonpatch from "fast-json-patch";
 import { createPublicClient, http, encodeFunctionData, getAddress, parseAbi, type Address, type Hex } from "viem";
-import { main as readHubs } from "../f/aave/scripts/sources/aave_v4_read_hubs.ts";
+import { main as readHubs } from "../f/aave/sources/v4/read_hubs.ts";
 import { main as diff } from "../f/chain_sentinel/rules/diff.ts";
 import { rpcMulticall } from "../f/aave/lib/multicall.ts";
 import { READER_ABI, READER_BYTECODE } from "../f/aave/lib/market-params-reader-artifact.ts";

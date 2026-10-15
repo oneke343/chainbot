@@ -1,4 +1,4 @@
-import { AaveV3UserPosition } from "../sources/types";
+import type { AaveV3UserPosition } from "../sources/v3/types.ts";
 import { main as render } from "../../handlebars/render"
 // market name -> health factor threshold
 export type PositionHFThresholds = Record<string, string | number>;

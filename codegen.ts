@@ -11,7 +11,7 @@ const config: CodegenConfig = {
       {
         schema: `https://api.${version}.aave.com/graphql`,
         documents: documents.filter((document) =>
-          basename(document).startsWith("aave_v4_") === (version === "v4")
+          (document.includes("/sources/v4/") || basename(document).startsWith("aave_v4_")) === (version === "v4")
         ),
         plugins: ["typescript-operations"],
       },

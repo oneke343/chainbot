@@ -18,7 +18,7 @@ value:
               '43114': https://api.avax.network/ext/bc/C/rpc
               '5042': https://rpc.quicknode.mainnet.arc.io
               '8453': https://mainnet.base.org
-        path: f/aave/scripts/workflows/collect_aave_v4_market_params
+        path: f/aave/sources/v4/market_params
       timeout:
         type: static
         value: 600

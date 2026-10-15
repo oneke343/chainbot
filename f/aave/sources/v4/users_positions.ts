@@ -1,9 +1,9 @@
 import { taskScript, workflow } from "windmill-client";
 import type { AaveV4UserPosition } from "./types.ts";
-import type { AaveV4ChainsQuery, AaveV4UserPositionsQuery } from "../lib/v4-types.ts";
+import type { AaveV4ChainsQuery, AaveV4UserPositionsQuery } from "../../lib/v4-types.ts";
 
-const queryChains = taskScript("f/aave/scripts/sources/aave_v4_chains", { cache_ttl: 60 * 60 * 24 });
-const queryUserPositions = taskScript("f/aave/scripts/sources/aave_v4_user_positions");
+const queryChains = taskScript("f/aave/sources/v4/chains", { cache_ttl: 60 * 60 * 24 });
+const queryUserPositions = taskScript("f/aave/sources/v4/user_positions");
 
 export const main = workflow(async (
     users: string[],

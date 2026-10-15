@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as wmill from "windmill-client";
-import { evaluateAaveV4Health, normalizeAaveV4Positions, main as aaveRule } from "../f/aave/scripts/rules/evaluate_aave_v4_health.ts";
 import { evaluateMorphoHealth, normalizeMorphoPositions, main as morphoRule } from "../f/morpho/scripts/rules/evaluate_morpho_health.ts";
 import {
   evaluatePositionHealth, inspectHealthFactors, renderPositionHealthMessages,
@@ -38,52 +37,50 @@ function inputs(positions: HealthPosition[] = [position()]): HealthInputs {
   ], positions };
 }
 
-for (const [name, evaluate] of [["aave-v4", evaluateAaveV4Health], ["morpho", evaluateMorphoHealth]] as const) {
-  test(`${name}: market overrides win, new markets use default, output feeds AlertPolicy`, async () => {
-    const data = inputs([position(), position({ id: `8453:${address}`, name: "Base / Main / exact",
-      market_name: "Base / Main", chain_id: 8453, health_factor: "1.14" })]);
-    const { output } = evaluate(data, 1.15, { "Ethereum / Main": 1.05 });
-    const inspected = output.fields.positions as Array<HealthPosition & {threshold: string; threshold_source: string}>;
-    assert.equal(output.matched, true);
-    assert.equal(inspected[0].chain_id, 8453);
-    assert.equal(inspected[0].threshold_source, "default");
-    assert.equal(inspected[1].threshold, "1.05");
-    assert.equal(output.messages?.length, 1);
-    assert.match(output.messages![0].description, /1.1400/);
-    assert.deepEqual(Object.keys(output).sort(), ["fields", "matched", "messages"]);
-    const decision = await alertPolicy(output, "warning");
-    assert.equal(decision.messages[0].severity, "warning");
-    assert.equal(decision.messages[0].title, output.messages![0].title);
-    const first = evaluate(data, 1.15, { "Ethereum / Main": 1.05 });
-    assert.equal(evaluate(data, 1.15, { "Ethereum / Main": 1.05 }, first.states).output.matched, false);
-  });
+test("morpho: market overrides win, new markets use default, output feeds AlertPolicy", async () => {
+  const data = inputs([position(), position({ id: `8453:${address}`, name: "Base / Main / exact",
+    market_name: "Base / Main", chain_id: 8453, health_factor: "1.14" })]);
+  const { output } = evaluateMorphoHealth(data, 1.15, { "Ethereum / Main": 1.05 });
+  const inspected = output.fields.positions as Array<HealthPosition & {threshold: string; threshold_source: string}>;
+  assert.equal(output.matched, true);
+  assert.equal(inspected[0].chain_id, 8453);
+  assert.equal(inspected[0].threshold_source, "default");
+  assert.equal(inspected[1].threshold, "1.05");
+  assert.equal(output.messages?.length, 1);
+  assert.match(output.messages![0].description, /1.1400/);
+  assert.deepEqual(Object.keys(output).sort(), ["fields", "matched", "messages"]);
+  const decision = await alertPolicy(output, "warning");
+  assert.equal(decision.messages[0].severity, "warning");
+  assert.equal(decision.messages[0].title, output.messages![0].title);
+  const first = evaluateMorphoHealth(data, 1.15, { "Ethereum / Main": 1.05 });
+  assert.equal(evaluateMorphoHealth(data, 1.15, { "Ethereum / Main": 1.05 }, first.states).output.matched, false);
+});
 
-  test(`${name}: zero, equality, decimal precision, recovery and closed positions`, () => {
-    assert.equal(evaluate(inputs([position({ health_factor: 0 })]), 1.15).output.matched, true);
-    assert.equal(evaluate(inputs([position({ health_factor: 1e-8 })]), 1.15).output.matched, true);
-    assert.equal(evaluate(inputs([position({ health_factor: 1e21 })]), 1.15).output.matched, false);
-    assert.equal(evaluate(inputs([position({ health_factor: "1.15" })]), 1.15).output.matched, false);
-    assert.equal(evaluate(inputs([position({ health_factor: "1.149999999999999999" })]), "1.15").output.matched, true);
-    assert.deepEqual(evaluate(inputs([position({ health_factor: "1.3" })]), 1.15).output.messages, []);
-    const closed = evaluate(inputs([]), 1.15).output;
-    assert.deepEqual(closed.fields.positions, []);
-    assert.equal(closed.matched, false);
-    const supplied = evaluate(inputs([position({ has_debt: false, health_factor: null })]), 1.15).output;
-    assert.deepEqual(supplied.fields.positions, []);
-  });
+test("morpho: zero, equality, decimal precision, recovery and closed positions", () => {
+  assert.equal(evaluateMorphoHealth(inputs([position({ health_factor: 0 })]), 1.15).output.matched, true);
+  assert.equal(evaluateMorphoHealth(inputs([position({ health_factor: 1e-8 })]), 1.15).output.matched, true);
+  assert.equal(evaluateMorphoHealth(inputs([position({ health_factor: 1e21 })]), 1.15).output.matched, false);
+  assert.equal(evaluateMorphoHealth(inputs([position({ health_factor: "1.15" })]), 1.15).output.matched, false);
+  assert.equal(evaluateMorphoHealth(inputs([position({ health_factor: "1.149999999999999999" })]), "1.15").output.matched, true);
+  assert.deepEqual(evaluateMorphoHealth(inputs([position({ health_factor: "1.3" })]), 1.15).output.messages, []);
+  const closed = evaluateMorphoHealth(inputs([]), 1.15).output;
+  assert.deepEqual(closed.fields.positions, []);
+  assert.equal(closed.matched, false);
+  const supplied = evaluateMorphoHealth(inputs([position({ has_debt: false, health_factor: null })]), 1.15).output;
+  assert.deepEqual(supplied.fields.positions, []);
+});
 
-  test(`${name}: malformed HF and thresholds fail rather than reporting healthy`, () => {
-    for (const hf of [null, undefined, "", "bad", -1, NaN, Infinity]) {
-      assert.throws(() => evaluate(inputs([position({ health_factor: hf as never })]), 1.15), /HF/);
-    }
-    for (const threshold of [null, "", "bad", -1, 0, NaN, Infinity, true]) {
-      assert.throws(() => evaluate(inputs(), threshold as never));
-      assert.throws(() => evaluate(inputs(), 1.15, { "Ethereum / Main": threshold as never }));
-    }
-    assert.throws(() => evaluate(inputs(), 1.15, [] as never));
-    assert.throws(() => evaluate({ ...inputs(), positions: null } as never, 1.15));
-  });
-}
+test("morpho: malformed HF and thresholds fail rather than reporting healthy", () => {
+  for (const hf of [null, undefined, "", "bad", -1, NaN, Infinity]) {
+    assert.throws(() => evaluateMorphoHealth(inputs([position({ health_factor: hf as never })]), 1.15), /HF/);
+  }
+  for (const threshold of [null, "", "bad", -1, 0, NaN, Infinity, true]) {
+    assert.throws(() => evaluateMorphoHealth(inputs(), threshold as never));
+    assert.throws(() => evaluateMorphoHealth(inputs(), 1.15, { "Ethereum / Main": threshold as never }));
+  }
+  assert.throws(() => evaluateMorphoHealth(inputs(), 1.15, [] as never));
+  assert.throws(() => evaluateMorphoHealth({ ...inputs(), positions: null } as never, 1.15));
+});
 
 test("ambiguous short names fail; exact names select independently and unknown keys are visible", () => {
   const a = position();
@@ -294,28 +291,14 @@ test("Spark Source decodes getUserAccountData and adapter produces common positi
   });
 });
 
-function aaveResult() {
-  return {
-    chains: [{ chainId: 1, name: "Ethereum" }, { chainId: 10, name: "OP Mainnet" }],
-    userPositions: [
-      { user, healthFactor: { current: "0" as string | null }, totalDebt: { current: { value: "100" } },
-        totalCollateral: { current: { value: "0" } },
-        spoke: { address, name: "Main", chain: { chainId: 1, name: "Ethereum" } } },
-      { user, healthFactor: { current: null as string | null }, totalDebt: { current: { value: "0" } },
-        totalCollateral: { current: { value: "100" } },
-        spoke: { address, name: "Main", chain: { chainId: 10, name: "OP Mainnet" } } },
-    ],
-  };
-}
-
 test("Aave native queries discover mainnets then request explicitly selected chains", () => {
-  const chains = readFileSync(new URL("../f/aave/scripts/sources/aave_v4_chains.gql", import.meta.url), "utf8");
-  const positions = readFileSync(new URL("../f/aave/scripts/sources/aave_v4_user_positions.gql", import.meta.url), "utf8");
+  const chains = readFileSync(new URL("../f/aave/sources/v4/chains.gql", import.meta.url), "utf8");
+  const positions = readFileSync(new URL("../f/aave/sources/v4/user_positions.gql", import.meta.url), "utf8");
   assert.match(chains, /MAINNET_ONLY/);
   assert.match(positions, /\$chain_ids: \[ChainId!\]!/);
   assert.match(positions, /chainIds: \$chain_ids/);
   assert.match(positions, /healthFactor \{current\}/);
-  const v3 = readFileSync(new URL("../f/aave/sources/aave_v3_users_positions__mod/aave_v3_user_positions.gql", import.meta.url), "utf8");
+  const v3 = readFileSync(new URL("../f/aave/sources/v3/users_positions__mod/user_positions.gql", import.meta.url), "utf8");
   assert.match(v3, /totalDebtBase/);
   assert.match(v3, /totalCollateralBase/);
   assert.match(v3, /address/);
@@ -326,32 +309,6 @@ test("Aave native queries discover mainnets then request explicitly selected cha
   const v3MarketRisk = readFileSync(new URL("../f/aave/scripts/sources/aave_v3_market_risk.gql", import.meta.url), "utf8");
   assert.match(v3MarketRisk, /availableLiquidity/);
   assert.match(v3MarketRisk, /borrowCap/);
-});
-
-test("Aave normalizes cross-network Spokes, preserving zero HF and excluding supply-only accounts", () => {
-  const data = normalizeAaveV4Positions(aaveResult(), user);
-  assert.equal(data.positions.length, 2);
-  assert.equal(evaluateAaveV4Health(data, 1.15).output.matched, true);
-  assert.equal((evaluateAaveV4Health(data, 1.15).output.fields.positions as unknown[]).length, 1);
-  assert.notEqual(data.positions[0].id, data.positions[1].id);
-  const selected = aaveResult();
-  selected.userPositions = selected.userPositions.slice(0, 1);
-  assert.deepEqual(normalizeAaveV4Positions(selected, user, [1]).chains, [{ id: 1, name: "Ethereum" }]);
-  assert.throws(() => normalizeAaveV4Positions(selected, user, [999]), /Unsupported chain/);
-  assert.throws(() => normalizeAaveV4Positions(selected, user, [10]), /Invalid Aave/);
-  assert.throws(() => normalizeAaveV4Positions(selected, address), /owner/);
-});
-
-test("Aave rejects missing or partial responses but accepts a genuinely empty account", () => {
-  const empty = { ...aaveResult(), userPositions: [] };
-  assert.deepEqual(normalizeAaveV4Positions(empty, user).positions, []);
-  assert.throws(() => normalizeAaveV4Positions({ ...empty, userPositions: null }, user), /Missing Aave V4 positions/);
-  assert.throws(() => normalizeAaveV4Positions({ ...empty, chains: [] }, user), /networks/);
-  assert.throws(() => normalizeAaveV4Positions({ data: null }, user), /Missing Aave/);
-  assert.throws(() => normalizeAaveV4Positions({ data: empty, errors: [{message: "partial"}] }, user), /GraphQL returned errors/);
-  const badDebt = aaveResult();
-  badDebt.userPositions[0].totalDebt.current.value = "bad";
-  assert.throws(() => normalizeAaveV4Positions(badDebt, user), /debt/);
 });
 
 function morphoPosition(index: number, chain = 1) {
@@ -444,9 +401,6 @@ test("GraphQL rejects partial errors and missing data, and uses the existing res
 
 test("Rule validation fails before reaching state persistence", async (t) => {
   const fetch = t.mock.method(globalThis, "fetch", async () => { throw new Error("Unexpected state write"); });
-  const badAave = aaveResult();
-  badAave.userPositions[0].healthFactor.current = null;
-  await assert.rejects(aaveRule(badAave, user, 1.15), /HF/);
   const bad = morphoResult();
   bad.marketPositions.items[0].healthFactor = null as never;
   await assert.rejects(morphoRule(bad, user, 1.15), /HF/);
@@ -456,7 +410,7 @@ test("Rule validation fails before reaching state persistence", async (t) => {
   assert.equal(fetch.mock.callCount(), 0);
 });
 
-test("both Rules persist Source inputs and MonitorOutput under their respective root Flow", async (t) => {
+test("Morpho Rule persists Source inputs and MonitorOutput under its root Flow", async (t) => {
   const oldWorkspace = process.env.WM_WORKSPACE;
   const oldJob = process.env.WM_JOB_ID;
   process.env.WM_WORKSPACE = "test-only";
@@ -467,7 +421,7 @@ test("both Rules persist Source inputs and MonitorOutput under their respective 
     if (oldJob === undefined) delete process.env.WM_JOB_ID;
     else process.env.WM_JOB_ID = oldJob;
   });
-  let root = "u/test/aave";
+  const root = "u/test/morpho";
   const saved: Array<{ path: string; value: unknown }> = [];
   t.mock.method(wmill.JobService, "getRootJobId", async () => "root-job");
   t.mock.method(wmill.JobService, "getJob", async () => ({ script_path: root }));
@@ -479,20 +433,15 @@ test("both Rules persist Source inputs and MonitorOutput under their respective 
     assert.equal(requestBody.resource_type, "monitor_state");
     saved.push(requestBody);
   });
-  const rawAave = aaveResult();
-  const aave = await aaveRule(rawAave, user, 1.15);
-  root = "u/test/morpho";
   const rawMorpho = { data: morphoResult() };
   const morpho = await morphoRule(rawMorpho, user, 1.15);
   assert.deepEqual(saved.map((entry) => entry.path), [
-    "u/test/aave/__monitor_state", "u/test/morpho/__monitor_state",
+    "u/test/morpho/__monitor_state",
   ]);
-  for (const [i, output] of [aave, morpho].entries()) {
-    const state = saved[i].value as { inputs: HealthInputs; states: unknown; outputs: RT.MonitorOutput };
-    assert.deepEqual(state.inputs, i === 0 ? rawAave : rawMorpho);
-    assert.deepEqual(state.outputs, output);
-    assert.deepEqual(Object.keys(state).sort(), ["inputs", "outputs", "states"]);
-  }
+  const state = saved[0].value as { inputs: HealthInputs; states: unknown; outputs: RT.MonitorOutput };
+  assert.deepEqual(state.inputs, rawMorpho);
+  assert.deepEqual(state.outputs, morpho);
+  assert.deepEqual(Object.keys(state).sort(), ["inputs", "outputs", "states"]);
 });
 
 test("large snapshots keep full fields and produce bounded per-position messages", async (t) => {

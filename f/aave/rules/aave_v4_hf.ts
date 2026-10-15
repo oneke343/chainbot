@@ -1,4 +1,4 @@
-import type { AaveV4UserPosition } from "../sources/types.ts";
+import type { AaveV4UserPosition } from "../sources/v4/types.ts";
 import { main as render } from "../../handlebars/render.ts";
 
 export async function main(
