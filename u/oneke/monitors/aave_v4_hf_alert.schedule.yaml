@@ -11,6 +11,6 @@ cron_version: v2
 enabled: true
 is_flow: false
 no_flow_overlap: true
-schedule: 0 */3 * * * *
+schedule: 1 */3 * * * *
 script_path: u/oneke/monitors/aave_v4_hf_alert
 timezone: Asia/Shanghai

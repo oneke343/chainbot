@@ -4,6 +4,6 @@ cron_version: v2
 enabled: true
 is_flow: false
 no_flow_overlap: true
-schedule: 0 */3 * * * *
+schedule: 2 */3 * * * *
 script_path: u/oneke/monitors/aave_v4_configuration_change
 timezone: Asia/Shanghai
