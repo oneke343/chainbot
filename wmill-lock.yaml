@@ -33,9 +33,10 @@ locks:
   f/aave/v3: 76e6a8b439fdce0ab8fd89b426f871be937bddd6d32deb4d4f0d272f189d4864
   f/aave/v4: 36e20b693ae467ff1467cd57a86dae0d69afbdabc5cc1e875beec16025c57513
   f/binance/flows/spot_price_change__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+  f/binance/rules/hf: bda6436526815c34f5a2ac0ea6f4679c0279c14c7d76b9e9a615aa5f9f5fa4b8
   f/binance/scripts/rules/evaluate_spot_price_change: 02366fd8292b69c9390d008191630a3f7d869b3bfa2aa6252603fe177fbe00fd
   f/binance/scripts/sources/spot_klines: 4dd36d611dc28a3ff0ccba11b6dc29d1592a001a28a9c80415782002452be241
-  f/binance/sources/vip_loan_positions: 2dd91895e4dde39b94988bd2faf3cadc49af481886dcb6092f508503c31d2714
+  f/binance/sources/vip_loan_positions: 7a32dd3e1fb4b239c53b287231dca85bc1edf1cef7152b5d3623f7f636b00d46
   f/chain_sentinel/lib/destination-batch: 63f1f7ab0ad964b2d493d5174450daca99236fe91074f7a42c1d2ca386306203
   f/chain_sentinel/lib/jsondiff: 29e8e4894fd36f7c083c780fddf715eea503cd0d1c62ed74f7f747c7919e8960
   f/chain_sentinel/lib/liquidation-events: 637930c260e1a39f094a6b9709ef54dddf2eb03cc0197c3c621726694911373c
@@ -71,5 +72,6 @@ locks:
   u/oneke/monitors/aave_v3_hf_alert: c6851baf46b261f7e49cb75a0dcef00eb35caaf00a9b123804ceb5683dcfdbda
   u/oneke/monitors/aave_v4_configuration_change: 3c00908b8e3bdd42f37c57b551b302817a71dabd49ff234e572db54a09c5e429
   u/oneke/monitors/aave_v4_hf_alert: 7072d143dfabb954742c054efdb39a4900b21c7f9aae6c909f689dd7df02af42
+  u/oneke/monitors/binance_vip_hf_alert: 33c03cdfd5b6c91db1b0c6c1b6ddf58a18ad3322c2975caf0dfc8b1a801b89c5
   u/oneke/monitors/morpho_hf_alert: cd5c62abdbc1e5e0318a7e0af541fbde51caf03a3d5daf9e52335a65ecb3cfd4
   u/oneke/sources/aave_v4_configuration__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a

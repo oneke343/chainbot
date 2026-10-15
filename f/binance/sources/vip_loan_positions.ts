@@ -12,6 +12,10 @@ export type VipLoanPosition = {
   totalCollateralValueAfterHaircut: string;
   lockedCollateralValue: string;
   currentLTV: string;
+  initialLtv: string;
+  marginCallLtv: string;
+  liquidationLtv: string;
+  collateralValue: string;
   expirationTime: string;
   loanDate: string;
   loanTerm: string;

@@ -1,0 +1,22 @@
+summary: Evaluate Binance VIP loan health factors
+description: Compare liquidation-adjusted health factors with configured thresholds.
+lock: '!inline f/binance/rules/hf.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    positions:
+      type: array
+      items:
+        type: object
+    thresholds:
+      type: object
+      default: {}
+      description: Optional health factor thresholds keyed by collateralAccountId.
+    defaultThreshold:
+      type: number
+      default: 1.1
+      description: Alert when health factor is strictly below this value.
+  required:
+    - positions

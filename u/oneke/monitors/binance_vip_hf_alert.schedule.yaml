@@ -1,0 +1,13 @@
+summary: Check Binance VIP loan health factors every five minutes
+args:
+  connection: $res:u/oneke/resources/binance-key
+  defaultThreshold: 1.2
+  thresholds: {}
+cron_version: v2
+enabled: true
+is_flow: false
+no_flow_overlap: true
+schedule: 48 */5 * * * *
+script_path: u/oneke/monitors/binance_vip_hf_alert
+timezone: Asia/Shanghai
+ws_error_handler_muted: false

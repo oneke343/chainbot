@@ -1,0 +1,22 @@
+summary: Monitor Binance VIP loan health factors
+description: Collect VIP loans, evaluate health factors, and route alerts
+  through the existing notification channel.
+lock: '!inline u/oneke/monitors/binance_vip_hf_alert.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    connection:
+      type: object
+      format: resource-c_binance
+    thresholds:
+      type: object
+      default: {}
+      description: Optional health factor thresholds keyed by collateralAccountId.
+    defaultThreshold:
+      type: number
+      default: 1.1
+      description: Alert when health factor is strictly below this value.
+  required:
+    - connection
