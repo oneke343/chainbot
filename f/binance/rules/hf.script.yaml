@@ -6,17 +6,21 @@ schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    positions:
-      type: array
-      items:
-        type: object
-    thresholds:
-      type: object
-      default: {}
-      description: Optional health factor thresholds keyed by collateralAccountId.
     defaultThreshold:
       type: number
-      default: 1.1
       description: Alert when health factor is strictly below this value.
+      default: 1.2
+    positions:
+      type: array
+      default: null
+      items:
+        type: resource
+        resourceType: vip_loan_position
+      originalType: resource[]
+    thresholds:
+      type: object
+      description: Optional health factor thresholds keyed by collateralAccountId.
+      default: {}
+      format: resource-record
   required:
     - positions

@@ -9,14 +9,16 @@ schema:
   properties:
     connection:
       type: object
+      default: null
       format: resource-c_binance
-    thresholds:
-      type: object
-      default: {}
-      description: Optional health factor thresholds keyed by collateralAccountId.
     defaultThreshold:
       type: number
-      default: 1.1
       description: Alert when health factor is strictly below this value.
+      default: 1.2
+    thresholds:
+      type: object
+      description: Optional health factor thresholds keyed by collateralAccountId.
+      default: {}
+      format: resource-record
   required:
     - connection
