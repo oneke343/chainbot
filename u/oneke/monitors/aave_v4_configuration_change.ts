@@ -1,6 +1,7 @@
 // The Bun runner initializes the checkpoint context required by workflow().
 import { taskScript, taskFlow, workflow, type CompletedJob } from "windmill-client";
-import type { JsonObject, } from "../../../f/chain_sentinel/lib/jsondiff.ts";
+import type { JsonObject} from "../../../f/chain_sentinel/lib/jsondiff.ts";
+import { renderJsonDiff } from "../../../f/chain_sentinel/lib/jsondiff.ts";
 
 const sourcePath = "u/oneke/sources/aave_v4_configuration";
 const previous = taskScript("f/chain_sentinel/sources/previous");
@@ -33,8 +34,9 @@ export const main = workflow(async () => {
   if (patch.length === 0) {
     return;
   }
-  const desc = await handlebarsRender({ template: TEMPLATE, context: { patch } });
 
+  // const desc = await handlebarsRender({ template: TEMPLATE, context: { patch } });
+  const desc = renderJsonDiff(patch);
   await notificationFlow({
     message: {
       level: "info",
