@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import wmill, { type WorkflowCtx } from "windmill-client";
 import { main } from "../f/aave/sources/aave_v3_users_positions.ts";
-import type { AaveMarketPositionsQuery } from "../f/aave/v3.types.ts";
+import type { AaveMarketPositionsQuery } from "../f/aave/lib/v3-types.ts";
 
 const api = { base_url: "https://api.v3.aave.com/graphql" };
 const users = ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"];

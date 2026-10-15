@@ -7,7 +7,7 @@ const documents = globSync("f/aave/**/*.gql").sort();
 const config: CodegenConfig = {
   generates: Object.fromEntries(
     ["v3", "v4"].map((version) => [
-      `f/aave/${version}.types.ts`,
+      `f/aave/lib/${version}-types.ts`,
       {
         schema: `https://api.${version}.aave.com/graphql`,
         documents: documents.filter((document) =>
