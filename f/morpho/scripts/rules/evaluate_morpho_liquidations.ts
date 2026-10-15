@@ -37,7 +37,7 @@ export function normalizeMorphoLiquidations(result: Result, user: string) {
   return { events, has_more: Number(page.pageInfo.countTotal) > page.items.length };
 }
 
-export async function main(inputs: Result, user: string, notify_on_first_run = false): Promise<RT.MonitorOutput> {
+export async function main(inputs: Result, user: string, notify_on_first_run = false): Promise<RT.CMonitorOutput> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(user)) throw new Error("user must be an EVM address");
   const previous = await getMonitorState<Result, LiquidationState>();
   const normalized = normalizeMorphoLiquidations(inputs, user);

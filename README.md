@@ -85,10 +85,10 @@ type MonitorState = {
 处于同一个 Rule job 中。因此同一个 Root Flow 的 Schedule、Webhook 和手动执行共享状态；
 复制成另一个 Root Flow 后会自然得到另一份状态。Root Flow 改名会改变状态路径。
 
-`f/chain_sentinel/resource_types` 下的 `monitor_output.resource-type.yaml` 和
-`monitor_state.resource-type.yaml` 分别定义公开 Rule 输出与内部持久化状态的 Windmill
+仓库根目录的 `c_monitor_output.resource-type.yaml` 和
+`c_monitor_state.resource-type.yaml` 分别定义公开 Rule 输出与内部持久化状态的 Windmill
 Resource Type。
-`setMonitorState()` 首次创建状态 Resource 时使用 `monitor_state` 类型；JSON Schema 和运行时
+`setMonitorState()` 首次创建状态 Resource 时使用 `c_monitor_state` 类型；JSON Schema 和运行时
 校验都会拒绝不符合 `MonitorOutput` 契约的数据。
 
 ## 通用 Position Risk Monitor
@@ -145,7 +145,7 @@ type AlertDecision = {
 };
 ```
 
-其中 `message` 使用 `f/chain_sentinel/resource_types/alert_message.resource-type.yaml` 定义的
+其中 `message` 使用仓库根目录的 `c_alert_message.resource-type.yaml` 定义的
 `AlertMessage` Resource Type，作为 AlertPolicy 和所有 Destination Sender 之间的统一契约。
 
 AlertPolicy 可以产生多个 `messages`，不接收也不返回 Destination。每条最终消息固定包含

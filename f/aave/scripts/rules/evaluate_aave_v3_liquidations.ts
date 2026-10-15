@@ -46,7 +46,7 @@ export async function main(
   market: string,
   market_name: string,
   notify_on_first_run = false,
-): Promise<RT.MonitorOutput> {
+): Promise<RT.CMonitorOutput> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(user) || !/^0x[0-9a-fA-F]{40}$/.test(market)
     || !Number.isSafeInteger(chain_id) || chain_id <= 0 || !market_name.trim()) {
     throw new Error("Invalid Aave V3 liquidation parameters");

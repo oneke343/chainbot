@@ -195,7 +195,7 @@ export async function main(
   market_rules: Record<string, MarketRiskRules> = {},
   spoke_ids: string[] = [],
   reserve_ids: string[] = [],
-): Promise<RT.MonitorOutput> {
+): Promise<RT.CMonitorOutput> {
   const previous = await getMonitorState<Result, State>();
   const next = evaluateAaveV4MarketRisk(inputs, default_rules, market_rules, previous.states, spoke_ids, reserve_ids);
   await setMonitorState(inputs, next.states, next.output);

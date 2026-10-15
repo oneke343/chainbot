@@ -4,7 +4,7 @@ type QueryValue = string | number | boolean | null | undefined
   | Array<string | number | boolean | null | undefined>;
 
 function buildUrl(
-  connection: RT.HttpConnection,
+  connection: RT.CHttpConnection,
   path: string,
   query: Record<string, QueryValue>,
 ): URL {
@@ -30,7 +30,7 @@ function buildUrl(
 }
 
 export async function main(
-  connection: RT.HttpConnection,
+  connection: RT.CHttpConnection,
   path: string,
   method = "GET",
   query: Record<string, QueryValue> = {},

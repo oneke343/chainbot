@@ -1,5 +1,5 @@
 declare namespace RT {
-  interface Binance {
+  interface CBinance {
     url: string;
     api_key: string;
     api_secret: string;
@@ -10,7 +10,7 @@ declare namespace RT {
     bearer_token?: string;
     custom_headers?: Record<string, string>;
   }
-  interface HttpConnection {
+  interface CHttpConnection {
     base_url: string;
     bearer_token?: string;
     headers?: Record<string, string>;
@@ -20,19 +20,19 @@ declare namespace RT {
     token: string;
   }
 
-  interface Flashduty {
+  interface CFlashduty {
     url: string;
     integration_key: string;
   }
 
-  interface AlertMessage {
+  interface CAlertMessage {
     title: string;
     description: string;
     severity: "info" | "warning" | "critical";
     fields: Record<string, unknown>;
   }
 
-  interface MonitorOutput {
+  interface CMonitorOutput {
     matched: boolean;
     messages: {
       title: string;
@@ -42,9 +42,9 @@ declare namespace RT {
     fields: Record<string, unknown>;
   }
 
-  interface MonitorState {
+  interface CMonitorState {
     inputs: Record<string, unknown>;
     states: Record<string, unknown>;
-    outputs: MonitorOutput;
+    outputs: CMonitorOutput;
   }
 }

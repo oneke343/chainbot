@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - "*.resource-type.yaml"
       - "f/**"
       - "u/**"
       - "wmill.yaml"
@@ -158,11 +159,11 @@ jobs:
       - name: Commit Windmill changes
         run: |
           set -euo pipefail
-          if [ -z "$(git status --porcelain -- f u wmill-lock.yaml)" ]; then
+          if [ -z "$(git status --porcelain -- f u wmill-lock.yaml '*.resource-type.yaml')" ]; then
             echo "Windmill workspace is already represented by main"
             exit 0
           fi
-          git add --all -- f u wmill-lock.yaml
+          git add --all -- f u wmill-lock.yaml '*.resource-type.yaml'
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -11,7 +11,7 @@ schema:
       type: object
       description: ''
       default: null
-      format: resource-http_connection
+      format: resource-c_http_connection
     max_window_minutes:
       type: number
       description: ''

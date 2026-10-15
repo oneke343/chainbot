@@ -14,7 +14,7 @@ schema:
       type: object
       description: HTTP endpoint and shared authentication.
       default: null
-      format: resource-http_connection
+      format: resource-c_http_connection
     headers:
       type: object
       additionalProperties:

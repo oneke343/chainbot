@@ -15,14 +15,14 @@ schema:
       type: object
       description: ''
       default: null
-      format: resource-flashduty
+      format: resource-c_flashduty
     messages:
       type: array
       description: ''
       default: null
       items:
         type: resource
-        resourceType: alert_message
+        resourceType: c_alert_message
       originalType: resource[]
   required:
     - destination

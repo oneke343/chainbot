@@ -60,7 +60,7 @@ export async function main(
   inputs: Result,
   default_rules: MarketRiskRules = {},
   market_rules: Record<string, MarketRiskRules> = {},
-): Promise<RT.MonitorOutput> {
+): Promise<RT.CMonitorOutput> {
   const markets = normalizeAaveV3MarketRisk(inputs);
   const previous = await getMonitorState<Result, MarketRiskState>();
   const next = evaluateMarketRisk(markets, default_rules, market_rules, previous.states);

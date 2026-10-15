@@ -1,5 +1,5 @@
 description: Binance API credentials.
-resource_type: binance
+resource_type: c_binance
 value:
   url: https://api.binance.com
   api_key: '$var:u/oneke/variables/binance_api_key'

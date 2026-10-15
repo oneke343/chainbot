@@ -142,6 +142,6 @@ export function evaluateMarketRisk(
       matched: messages.length > 0,
       messages,
       fields: { markets, triggered_findings: triggered, active_findings: active, message_count: messages.length },
-    } satisfies RT.MonitorOutput,
+    } satisfies RT.CMonitorOutput,
   };
 }

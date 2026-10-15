@@ -6,14 +6,17 @@ schema:
   $schema: https://json-schema.org/draft/2020-12/schema
   type: object
   properties:
-    connection:
-      type: object
-      format: resource-binance
-    loan_coin:
-      type: string
-      originalType: string
     collateral_coin:
       type: string
+      default: null
+      originalType: string
+    connection:
+      type: object
+      default: null
+      format: resource-c_binance
+    loan_coin:
+      type: string
+      default: null
       originalType: string
   required:
     - connection

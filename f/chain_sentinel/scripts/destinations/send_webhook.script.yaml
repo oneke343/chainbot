@@ -9,14 +9,14 @@ schema:
     connection:
       type: object
       default: null
-      format: resource-http_connection
+      format: resource-c_http_connection
     messages:
       type: array
       description: ''
       default: null
       items:
         type: resource
-        resourceType: alert_message
+        resourceType: c_alert_message
       originalType: resource[]
     path:
       type: string

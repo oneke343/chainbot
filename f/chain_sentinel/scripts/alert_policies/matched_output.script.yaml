@@ -11,7 +11,7 @@ schema:
       type: object
       description: ''
       default: null
-      format: resource-monitor_output
+      format: resource-c_monitor_output
     severity:
       type: string
       description: ''

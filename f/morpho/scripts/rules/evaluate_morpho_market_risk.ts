@@ -53,7 +53,7 @@ export async function main(
   market_ids: string[],
   default_rules: MarketRiskRules = {},
   market_rules: Record<string, MarketRiskRules> = {},
-): Promise<RT.MonitorOutput> {
+): Promise<RT.CMonitorOutput> {
   if (!Array.isArray(market_ids) || !market_ids.length
     || market_ids.some((id) => !/^0x[0-9a-fA-F]{64}$/.test(id))
     || new Set(market_ids.map((id) => id.toLowerCase())).size !== market_ids.length) {

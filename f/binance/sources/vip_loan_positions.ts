@@ -12,13 +12,13 @@ export type VipLoanPosition = {
   totalCollateralValueAfterHaircut: string;
   lockedCollateralValue: string;
   currentLTV: string;
-  expirationTime: number;
+  expirationTime: string;
   loanDate: string;
   loanTerm: string;
 };
 
 export async function main(
-  connection: RT.Binance,
+  connection: RT.CBinance,
   loan_coin?: string,
   collateral_coin?: string,
 ) {
@@ -30,7 +30,7 @@ export async function main(
     const query = new URLSearchParams({
       current: String(current),
       limit: "100",
-      recvWindow: "5000",
+      recvWindow: "60000",
       timestamp: String(Date.now()),
     });
     if (loan_coin) query.set("loanCoin", loan_coin);
@@ -46,9 +46,6 @@ export async function main(
 
     const page: { rows: VipLoanPosition[]; total: number } = JSON.parse(
       await response.text(),
-      // Binance returns int64 order IDs as JSON numbers, beyond Number precision.
-      (key: string, value: unknown, context?: { source: string }) =>
-        key === "orderId" && typeof value === "number" ? context.source : value,
     );
     positions.push(...page.rows);
     if (positions.length >= page.total) break;

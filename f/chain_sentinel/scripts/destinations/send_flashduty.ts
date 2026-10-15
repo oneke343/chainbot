@@ -22,8 +22,8 @@ type FlashdutyPayload = {
 };
 
 export async function main(
-  destination: RT.Flashduty,
-  messages?: RT.AlertMessage[] | null,
+  destination: RT.CFlashduty,
+  messages?: RT.CAlertMessage[] | null,
   alert_key?: string,
 ) {
   if (!messages?.length) return;
@@ -45,8 +45,8 @@ export async function main(
 }
 
 async function sendOne(
-  destination: RT.Flashduty,
-  message: RT.AlertMessage,
+  destination: RT.CFlashduty,
+  message: RT.CAlertMessage,
   alert_key?: string,
 ) {
 
@@ -88,7 +88,7 @@ async function sendOne(
 }
 
 function toFlashdutyEventStatus(
-  severity: RT.AlertMessage["severity"],
+  severity: RT.CAlertMessage["severity"],
 ): FlashdutyPayload["event_status"] {
   switch (severity) {
     case "critical":
@@ -100,7 +100,7 @@ function toFlashdutyEventStatus(
   }
 }
 
-function buildFlashdutyLabels(message: RT.AlertMessage): Record<string, string> {
+function buildFlashdutyLabels(message: RT.CAlertMessage): Record<string, string> {
   return {
     ...Object.fromEntries(
       Object.entries(message.fields).map(([key, value]) => [key, stringifyLabel(value)]),

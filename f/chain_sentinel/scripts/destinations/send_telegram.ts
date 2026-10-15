@@ -5,7 +5,7 @@ import { sendBatch } from "../../lib/destination-batch.ts";
 export async function main(
   auth: RT.Telegram,
   chat_id: string,
-  messages?: RT.AlertMessage[] | null,
+  messages?: RT.CAlertMessage[] | null,
 ) {
   if (!messages?.length) return;
   if (!auth?.token) throw new Error("Telegram token is required");
@@ -14,7 +14,7 @@ export async function main(
   return { destination: "telegram", delivered: results.length, results };
 }
 
-async function sendOne(auth: RT.Telegram, chat_id: string, message: RT.AlertMessage) {
+async function sendOne(auth: RT.Telegram, chat_id: string, message: RT.CAlertMessage) {
   const fields = message.fields && Object.keys(message.fields).length > 0
     ? `\n${JSON.stringify(message.fields)}`
     : "";

@@ -3,7 +3,7 @@
 ## VIP loan positions
 
 `f/binance/sources/vip_loan_positions` fetches all ongoing VIP loan orders from
-`GET /sapi/v1/loan/vip/ongoing/orders`. Pass a `binance` Resource containing
+`GET /sapi/v1/loan/vip/ongoing/orders`. Pass a `c_binance` Resource containing
 `url`, `api_key`, and `api_secret`, with optional `loan_coin` and `collateral_coin`
 filters. Set `url` to the API base URL, normally `https://api.binance.com`.
 Store credentials through Windmill secret variables.
@@ -14,9 +14,9 @@ without precision loss. Decimal strings and collateral lists remain unchanged.
 Pages are fetched sequentially with a one-second interval. Request and parsing
 errors propagate; the Source does not retry, store history, or evaluate alerts.
 
-The local `binance.resource-type.yaml` defines the credentials schema. Resource
-types are excluded from this repository's sync, so register it in the workspace
-before configuring a credentials Resource.
+The root-level `c_binance.resource-type.yaml` defines the credentials schema and is
+included in workspace sync. Resource type files live at the repository root
+because the CLI uses their paths as workspace-wide type names.
 
 ## Spot price monitor
 

@@ -17,21 +17,193 @@ schema:
       properties:
         reserves:
           type: array
+          format: resource-reserve
           items:
             type: object
+            properties:
+              id:
+                type: string
+                description: ''
+                originalType: string
+              summary:
+                type: object
+                description: ''
+                properties:
+                  borrowable:
+                    type: object
+                    description: ''
+                    format: resource-amount
+                    properties:
+                      amount:
+                        type: object
+                        description: ''
+                        properties:
+                          decimals:
+                            type: number
+                            description: ''
+                          onChainValue:
+                            type: string
+                            description: ''
+                            originalType: string
+                  borrowed:
+                    type: ''
+                    description: ''
+                  suppliable:
+                    type: object
+                    description: ''
+                    format: resource-amount
+                    properties:
+                      amount:
+                        type: object
+                        description: ''
+                        properties:
+                          decimals:
+                            type: number
+                            description: ''
+                          onChainValue:
+                            type: string
+                            description: ''
+                            originalType: string
+                  supplied:
+                    type: ''
+                    description: ''
+              asset:
+                type: object
+                description: ''
+                properties:
+                  hub:
+                    type: object
+                    description: ''
+                    properties:
+                      id:
+                        type: string
+                        description: ''
+                        originalType: string
+                      address:
+                        type: string
+                        description: ''
+                        originalType: string
+                      name:
+                        type: string
+                        description: ''
+                        originalType: string
+                  underlying:
+                    type: object
+                    description: ''
+                    properties:
+                      address:
+                        type: string
+                        description: ''
+                        originalType: string
+                      info:
+                        type: object
+                        description: ''
+                        properties:
+                          decimals:
+                            type: number
+                            description: ''
+                          symbol:
+                            type: string
+                            description: ''
+                            originalType: string
+              canBorrow:
+                type: boolean
+                description: ''
+              canSupply:
+                type: boolean
+                description: ''
+              chain:
+                type: object
+                description: ''
+                properties:
+                  name:
+                    type: string
+                    description: ''
+                    originalType: string
+                  chainId:
+                    type: number
+                    description: ''
+              settings:
+                type: object
+                description: ''
+                properties:
+                  borrowCap:
+                    type: object
+                    description: ''
+                    format: resource-amount
+                    properties:
+                      amount:
+                        type: object
+                        description: ''
+                        properties:
+                          decimals:
+                            type: number
+                            description: ''
+                          onChainValue:
+                            type: string
+                            description: ''
+                            originalType: string
+                  supplyCap:
+                    type: object
+                    description: ''
+                    format: resource-amount
+                    properties:
+                      amount:
+                        type: object
+                        description: ''
+                        properties:
+                          decimals:
+                            type: number
+                            description: ''
+                          onChainValue:
+                            type: string
+                            description: ''
+                            originalType: string
+              spoke:
+                type: object
+                description: ''
+                properties:
+                  id:
+                    type: string
+                    description: ''
+                    originalType: string
+                  address:
+                    type: string
+                    description: ''
+                    originalType: string
+                  name:
+                    type: string
+                    description: ''
+                    originalType: string
+              status:
+                type: object
+                description: ''
+                properties:
+                  active:
+                    type: boolean
+                    description: ''
+                  frozen:
+                    type: boolean
+                    description: ''
+                  paused:
+                    type: boolean
+                    description: ''
+          originalType: record[]
     market_rules:
       type: object
       default: {}
       format: resource-record
-    spoke_ids:
-      type: array
-      default: []
-      items:
-        type: string
     reserve_ids:
       type: array
       default: []
       items:
         type: string
+      originalType: string[]
+    spoke_ids:
+      type: array
+      default: []
+      items:
+        type: string
+      originalType: string[]
   required:
     - inputs

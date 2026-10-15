@@ -128,7 +128,7 @@ export function normalizeSpotKlines(
 }
 
 export async function main(
-  connection: RT.HttpConnection,
+  connection: RT.CHttpConnection,
   symbol: string,
   max_window_minutes: number,
 ): Promise<SpotKlinesResult> {

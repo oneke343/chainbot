@@ -96,6 +96,6 @@ export function evaluateLiquidations(
         events: notified_events,
         last_processed_block: lastBlocks,
       },
-    } satisfies RT.MonitorOutput,
+    } satisfies RT.CMonitorOutput,
   };
 }

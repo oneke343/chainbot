@@ -1,5 +1,6 @@
 defaultTs: bun
 includes:
+  - 'c_*.resource-type.yaml'
   - f/aave/**
   - f/binance/**
   - f/morpho/**

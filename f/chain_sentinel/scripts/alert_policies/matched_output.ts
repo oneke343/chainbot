@@ -3,11 +3,11 @@
 import { normalizeMonitorOutput } from "../../lib/monitor-state.ts";
 
 export type AlertDecision = {
-  messages: RT.AlertMessage[];
+  messages: RT.CAlertMessage[];
 };
 
 export async function main(
-  monitor_output: RT.MonitorOutput,
+  monitor_output: RT.CMonitorOutput,
   severity: "info" | "warning" | "critical" = "warning",
 ): Promise<AlertDecision> {
   const output = normalizeMonitorOutput(monitor_output);

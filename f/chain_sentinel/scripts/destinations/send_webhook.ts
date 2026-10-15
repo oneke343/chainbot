@@ -3,9 +3,9 @@
 import { sendBatch } from "../../lib/destination-batch.ts";
 
 export async function main(
-  connection: RT.HttpConnection,
+  connection: RT.CHttpConnection,
   path: string,
-  messages?: RT.AlertMessage[] | null,
+  messages?: RT.CAlertMessage[] | null,
 ) {
   if (!messages?.length) return;
   if (!connection?.base_url) throw new Error("connection.base_url is required");

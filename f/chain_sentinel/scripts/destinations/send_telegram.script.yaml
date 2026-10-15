@@ -20,7 +20,7 @@ schema:
       default: null
       items:
         type: resource
-        resourceType: alert_message
+        resourceType: c_alert_message
       originalType: resource[]
   required:
     - auth

@@ -54,7 +54,7 @@ schema:
     connection:
       type: object
       description: Binance public market-data HTTP connection.
-      format: resource-http_connection
+      format: resource-c_http_connection
     rules:
       type: array
       description: Price-change rules combined with OR semantics.

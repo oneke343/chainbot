@@ -160,6 +160,6 @@ export async function setMonitorState<
   outputs: Outputs,
 ): Promise<MonitorState<Inputs, States, Outputs>> {
   const monitorState = createMonitorState(inputs, states, outputs);
-  await wmill.setResource(monitorState, await currentMonitorStatePath(), "monitor_state");
+  await wmill.setResource(monitorState, await currentMonitorStatePath(), "c_monitor_state");
   return monitorState;
 }
