@@ -1,6 +1,6 @@
 summary: Monitor Aave V4 configuration changes
-description: Read Source history before collecting current configuration and
-  return a non-empty JSON Patch, or null when no alert is needed.
+description: Compare current configuration with the previous successful Source
+  job and send a notification when changes are detected.
 lock: '!inline u/oneke/monitors/aave_v4_configuration_change.script.lock'
 kind: script
 schema:

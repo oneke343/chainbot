@@ -1,194 +1,70 @@
-# Chain Sentinel on Windmill
+# Chainbot on Windmill
 
-这是一个保持最小边界的组件化 Monitor Project。`aave`、`morpho`、`binance` 和 `chain_sentinel` 是独立的
-项目边界，每个项目内部再按 Windmill 对象类型和职责组织：
+本项目使用 Windmill Source、Rule 与 Workflow-as-Code 编排监控。
+Source 采集事实，Rule 判断阈值并生成消息，用户目录中的 Monitor 负责调用通知 Flow。
 
-- `f/chain_sentinel/scripts` 提供通用 AlertPolicy、Source 和 Destination 脚本。
-- `f/chain_sentinel/lib` 提供共享的 MonitorState 函数和类型。
-- `f/aave/scripts` 与 `f/aave/flows` 提供 Aave Monitor Sources、Rules 和 Flow。
-- `f/binance/scripts` 与 `f/binance/flows` 提供币安现货价格 Monitor。
-- `f/morpho/sources` 与 `f/morpho/rules` 提供 Morpho Blue HF 告警组件；`scripts` 与 `flows` 保留清算和市场风险 Monitor。
-- `f/aave/resources` 保存 Aave 示例 Resource。
-- `f/binance/resources` 保存币安公共行情示例 Resource。
-- 用户自己创建 Root Flow，组合 Monitor Flow、AlertPolicy、Destinations 和任意 Windmill Trigger。
+## 当前监控
 
-没有额外的 Control Plane 或 MonitorInstance Resource。用户的 Root Flow 就是 Monitor Instance，
-Root Flow Path 就是稳定的实例身份。
+| Monitor | 功能 |
+| --- | --- |
+| `u/oneke/monitors/aave_v3_hf_alert` | Aave V3 用户仓位 HF |
+| `u/oneke/monitors/aave_v4_hf_alert` | Aave V4 用户 Spoke 账户 HF |
+| `u/oneke/monitors/morpho_hf_alert` | Morpho 借款仓位 HF |
+| `u/oneke/monitors/binance_vip_hf_alert` | Binance VIP Loan HF，按 collateralAccountId 配置阈值 |
+| `u/oneke/monitors/okx_loan_hf_alert` | OKX Flexible Loan HF |
+| `u/oneke/monitors/aave_v4_configuration_change` | Aave V4 配置快照变更 |
 
-## 执行模型
+HF Rule 返回 `{level, title, description}` 或 `null`，Monitor 仅通知非空结果。
+HF 持续低于阈值时，每次定时运行都会告警。各 Monitor 的 `.schedule.yaml` 定义周期和参数。
 
-Monitor 开发者实现的 Flow：
+协议接口、输入与阈值配置见 [Aave](f/aave/README.md)、[Morpho](f/morpho/README.md)、
+[Binance](f/binance/README.md) 和 [OKX](f/okx/README.md)。
 
-```text
-Sources ──产生本次 inputs
-        │
-        ▼
-Rule(inputs)
-  ├─ getMonitorState()
-  ├─ 计算新的 states + outputs
-  ├─ setMonitorState({ inputs, states, outputs })
-  └─ 只返回 MonitorOutput { matched, messages, fields }
-```
+## 配置变更与通知
 
-用户创建的 Root Flow：
+Aave V4 配置 Source 位于 `u/oneke/sources/aave_v4_configuration`。
+Monitor 先读取该 Source 最近成功 job，再采集当前快照；首次采集只建立历史。
+已有历史时，通过 `f/chain_sentinel/rules/diff` 生成包含旧值的 JSON Patch，
+并由 `renderJsonDiff` 分组渲染后发送通知。字段与采集边界见
+[Aave V4 配置清单](f/aave/MARKET_PARAMS.md)。
 
-```text
-Windmill Trigger
-        │
-        ▼
-Aave/Binance/Morpho Monitor Flow
-        │ MonitorOutput
-        ▼
-AlertPolicy
-        │ AlertDecision { messages }
-        ▼
-用户在 Flow 中选择 Destination Sender
-```
+`u/oneke/channels/notification` 将所有消息交给 Windmill Hub Telegram 集成，
+error 消息同时调用 `f/chain_sentinel/scripts/destinations/send_flashduty`。
+两个通知分支独立运行，投递失败会使 Flow 失败。用户连接配置保存在 `u/oneke/resources/`。
 
-AlertPolicy 不知道 Destination。它只判断是否发送以及发送什么；Root Flow 决定发送到哪些
-Destination；Sender 只负责协议投递。
+FlashDuty 使用根目录的 `c_flashduty.resource-type.yaml` 与
+`c_alert_message.resource-type.yaml`，将 `critical`、`warning`、`info` severity
+映射到 FlashDuty 标准告警事件。批量投递由 `lib/destination-batch.ts` 控制并发，单批最多 100 条。
 
-## MonitorOutput 与 MonitorState
-
-```ts
-type MonitorOutput = {
-  matched: boolean;
-  messages: Array<{
-    title: string;
-    description: string;
-    fields?: Record<string, unknown>;
-  }>;
-  fields: Record<string, unknown>;
-};
-
-type MonitorState = {
-  inputs: Record<string, unknown>;
-  states: Record<string, unknown>;
-  outputs: MonitorOutput;
-};
-```
-
-- `inputs`：Sources 本次执行产生的结果。
-- `states`：Rules 需要跨运行保存的内部状态。
-- `outputs`：Rules 本次产生的报警候选，必须包含 `matched`、`messages` 和 `fields`；具体
-  Monitor 可以为多个独立风险项分别生成候选消息。
-- Root Flow 和 Monitor Flow 的参数不保存在 MonitorState 中。
-
-`f/chain_sentinel/lib/monitor-state.ts` 导出的 `getMonitorState()` 和 `setMonitorState()` 会取得
-当前 Root Job 的 `script_path`，并把状态保存为：
-
-```text
-{rootFlowPath}/__monitor_state
-```
-
-它们是供 Rule import 的普通函数，不是独立 Windmill Flow 节点。状态读写和业务状态演进因此
-处于同一个 Rule job 中。因此同一个 Root Flow 的 Schedule、Webhook 和手动执行共享状态；
-复制成另一个 Root Flow 后会自然得到另一份状态。Root Flow 改名会改变状态路径。
-
-仓库根目录的 `c_monitor_output.resource-type.yaml` 和
-`c_monitor_state.resource-type.yaml` 分别定义公开 Rule 输出与内部持久化状态的 Windmill
-Resource Type。
-`setMonitorState()` 首次创建状态 Resource 时使用 `c_monitor_state` 类型；JSON Schema 和运行时
-校验都会拒绝不符合 `MonitorOutput` 契约的数据。
-
-## 通用 Position Risk Monitor
-
-[Aave Monitor](f/aave/README.md) 和 [Morpho Monitor](f/morpho/README.md) 使用
-Source → HF Rule → notification 的 Workflow-as-Code，支持多用户查询。Morpho Source
-批量查询用户并分页收集全部借款仓位；Rule 使用 `thresholds`、`defaultThreshold` 和
-`ltvThreshold`，忽略 LLTV 达到或超过阈值的市场。
-
-Aave V3 使用 Workflow-as-Code `u/oneke/monitors/aave_v3_hf_alert`：
-
-```text
-sources/v3/users_positions（发现主网并按用户查询仓位）
-  → aave_v3_hf（逐用户判断 HF 并渲染告警）
-  → notification（Telegram 和 FlashDuty）
-```
-
-Rule 返回 `{level, title, description}` 或 `null`；WAC 只通知非空结果，并返回告警数组。
-市场阈值由 `thresholds` 覆盖 `defaultThreshold`，默认忽略启用 eMode 的市场。
-此 WAC 不读写 MonitorState。
-
-## 清算事件与 Market Risk
-
-第二轮新增六个可复用 Monitor Flow，仍然只运行 Sources 和 Rules：
-
-- `f/aave/flows/aave_v3_liquidations`、`aave_v4_liquidations` 与
-  `f/morpho/flows/morpho_liquidations` 查询协议确认的清算事件。
-- `f/aave/flows/aave_v3_market_risk` 监控 reserve 流动性、利用率、Supply/Borrow Cap 和暂停/冻结。
-- `f/aave/flows/aave_v4_market_risk` 按 reserve 监控流动性、利用率、资产 Cap 使用率和操作风险。
-- `u/oneke/sources/aave_v4_configuration` 通过 Windmill 原生 GraphQL 发现 Hub，再以 multicall 和 deployless Reader 采集 V4 配置；`u/oneke/monitors/aave_v4_configuration_change` 使用 Source 执行前的 job 历史比较当前配置，通过通用 JSON Patch diff、Handlebars 和 notification Flow 生成并发送通知。字段范围详见 [配置清单](f/aave/MARKET_PARAMS.md)。
-- `f/morpho/flows/morpho_market_risk` 监控 Oracle warnings、已实现/未实现坏账、流动性和利用率。
-
-清算 Monitor 首次运行默认只建立基线；随后使用稳定事件 ID 去重。Morpho 同时保存
-`chainId + txHash + logIndex` 和每链最新 block；若返回页与旧游标不再重叠则失败，避免静默漏事件。
-Aave API 没有在这些查询中提供 block/log index，因此使用协议活动 ID 或交易哈希及分页重叠保护。
-
-Liquidation 和 Market Risk 都会写 `{ROOT_FLOW_PATH}/__monitor_state`，必须分别放在独立
-Root Flow 中，不能把多个有状态 Monitor 子 Flow 串在同一 Root Flow 下。Root Flow 再统一接
-AlertPolicy 和批量 Destination。
-
-## 通用 AlertPolicy
-
-`f/chain_sentinel/scripts/alert_policies/matched_output` 是最小的通用策略：直接接收
-`MonitorOutput`，为每个候选消息补充 severity，返回：
-
-```ts
-type AlertDecision = {
-  messages: Array<{
-    title: string;
-    description: string;
-    severity: "info" | "warning" | "critical";
-    fields: Record<string, unknown>;
-  }>;
-};
-```
-
-其中 `message` 使用仓库根目录的 `c_alert_message.resource-type.yaml` 定义的
-`AlertMessage` Resource Type，作为 AlertPolicy 和所有 Destination Sender 之间的统一契约。
-
-AlertPolicy 可以产生多个 `messages`，不接收也不返回 Destination。每条最终消息固定包含
-`title`、`description`、`severity`、`fields` 四个字段。Root Flow 把整个数组一次传给
-Telegram、Webhook 或其他 Sender，不包含发送循环；空数组由 Sender 直接返回。
-
-内置 Destination Sender 包含 Telegram、Webhook 和 FlashDuty。FlashDuty 使用标准告警事件
-接口，将 `AlertMessage.severity` 映射为 `Critical`、`Warning` 或 `Info`，并把 `fields` 转换为
-字符串 labels；可选的 `alert_key` 会在 Sender 内按 `finding_id` 扩展，用于 FlashDuty 独立聚合
-批次内的每个告警。Sender 单批最多接收 100 条；Telegram 对同一 chat 顺序发送，FlashDuty
-和 Webhook 使用最多 4 个并发请求。FlashDuty Resource 同时保存
-标准告警 Endpoint URL 和 `integration_key`，Sender 不依赖硬编码地址。
-
-## Project 结构
+## 项目结构
 
 ```text
 f/
-  chain_sentinel/        # 通用基座项目
-    scripts/
-      alert_policies/    # MonitorOutput → AlertDecision
-      destinations/      # AlertMessage + Destination Resource → SendResult
-      sources/           # 通用 Sources
+  aave/                  # V3/V4 Source、HF Rule、配置 Reader 和连接
+  binance/               # VIP Loan Source 与 HF Rule
+  okx/                   # Flexible Loan Source 与 HF Rule
+  morpho/                # 仓位 Source 与 HF Rule
+  handlebars/            # HF 告警模板渲染
+  wmm/                   # Windmill job 历史读取
+  chain_sentinel/
     lib/
-      destination-batch.ts # Destination 内部的有界批量投递
-      liquidation-events.ts # 清算事件游标、去重和消息
-      market-risk.ts       # Oracle、坏账、流动性、利用率与 Cap 状态机
-      monitor-state.ts   # get/set MonitorState 等共享函数与类型
-      render-message.ts  # 使用 Monitor inputs + states 渲染 Monitor 自有模板
-    resource_types/      # chain_sentinel 拥有的 Resource Type 定义
-  aave/                  # Aave Monitor 项目
-    scripts/
-      sources/           # Aave Sources
-      rules/             # Aave Rules，负责自身 MonitorState 读写
-    flows/                # Aave Monitor Flows
-    resources/            # Aave 示例连接配置
-  binance/                # Binance Spot Monitor 项目
-    scripts/
-      sources/            # 已关闭的 1 分钟现货 K 线
-      rules/              # 百分比变化、OR、去重与恢复
+      destination-batch.ts
+      jsondiff.ts
+      source-tm.ts
+    rules/diff.ts
+    sources/previous.ts
+    scripts/destinations/send_flashduty.ts
+u/oneke/
+  monitors/              # Workflow-as-Code 与 Schedule
+  sources/               # 配置采集 Flow
+  channels/              # 通知 Flow 与渠道配置
+  resources/             # 用户连接配置
+c_*.resource-type.yaml    # 根目录的自定义 Resource Type
 ```
 
-`lib` 中的 `.script.yaml` / `.script.lock` 是 `wmill generate-metadata` 为同步和依赖解析生成的
-伴随文件；`monitor-state.ts` 没有 `main`，不会作为业务 runnable 暴露，只通过相对 import 使用。
+`lib` 中的 `.script.yaml` / `.script.lock` 是 Windmill 同步和依赖解析所需的伴随文件。
+纯库通过相对 import 使用，不提供 `main` 入口。
+GraphQL 查询类型通过 `bun run codegen` 生成，配置位于 `codegen.ts`。
 
 ## 本地验证
 
@@ -197,8 +73,7 @@ npm test
 npm run check
 ```
 
-这些命令不会部署。需要运行真实 Flow 时使用本地 `wmill flow preview`；只有明确部署时才执行
-项目所配置的部署流程。
+这些命令不会部署。只读采集预览使用 `wmill script preview` 或 `wmill flow preview`。
 
 ## GitHub 与 Windmill 双向同步
 

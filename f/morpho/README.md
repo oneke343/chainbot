@@ -36,20 +36,4 @@ Source 调用独立 GraphQL Script `f/morpho/sources/user_positions`（`sources/
 按返回的 `user.address` 忽略大小写归组，保留输入地址作为结果 key，没有仓位的用户返回空数组。
 翻页提前返回空页或借款仓位缺少 HF 时执行失败。
 预览或运行 WAC 前需要部署该查询脚本。
-仓位类型位于 `sources/types.ts`，此 WAC 不使用旧 MonitorState。
-
-## 清算与市场风险
-
-`flows/morpho_liquidations__flow` 一次查询最多 1000 条真实 `Liquidation` transaction，使用
-`chainId + txHash + logIndex` 去重并保存每链最新 block。首次执行默认只建立基线；分页不完整或
-无法和旧游标重叠时拒绝保存状态。
-
-`flows/morpho_market_risk__flow` 按明确的 `market_ids` 查询市场快照。第一版支持：
-
-- `oracle_unusable`、`oracle_price_derivation` 等 API warning；
-- 当前 `badDebt`，并保留 API 的 realized/unrealized bad-debt warning；
-- `liquidityAssetsUsd`；
-- `utilization`。
-
-每个指标都通过 `default_rules` 或 `market_rules` 设置阈值。Source 必须完整返回全部配置市场，
-否则 Rule 失败且不覆盖上一份有效状态。
+仓位类型位于 `sources/types.ts`。

@@ -1,5 +1,4 @@
 import { globSync } from "node:fs";
-import { basename } from "node:path";
 import type { CodegenConfig } from "@graphql-codegen/cli";
 
 const documents = globSync("f/aave/**/*.gql").sort();
@@ -12,7 +11,7 @@ const config: CodegenConfig = {
         {
           schema: `https://api.${version}.aave.com/graphql`,
           documents: documents.filter((document) =>
-            (document.includes("/sources/v4/") || basename(document).startsWith("aave_v4_")) === (version === "v4")
+            document.includes(`/sources/${version}/`)
           ),
           plugins: ["typescript-operations"],
         },

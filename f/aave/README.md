@@ -5,8 +5,7 @@
 在项目根目录运行 `bun run codegen`，递归扫描 `f/aave/**/*.gql`，按 API 版本生成
 `f/aave/lib/v3-types.ts` 和 `f/aave/lib/v4-types.ts`，各自包含该版本所有查询的返回值与变量类型。
 修改查询后重新运行，生成文件不要手改。
-`sources/v4/` 下的查询及 `scripts/sources/` 中以 `aave_v4_` 开头的查询使用 V4 schema，
-其余查询使用 V3 schema；生成过程需要联网读取 schema。
+`sources/v3/` 与 `sources/v4/` 下的查询分别使用 V3 与 V4 schema；生成过程需要联网读取 schema。
 配置在根目录 `codegen.ts`，地址、金额、时间等自定义 scalar 的 TypeScript 映射也在该文件中。
 
 Source 仓位类型分别定义在 `sources/v3/types.ts` 和 `sources/v4/types.ts`。
@@ -46,23 +45,8 @@ thresholds:
 每个命中用户返回一条包含用户、Spoke、网络、HF、配置抵押因子和实际阈值的 error 消息。
 WAC 将非空消息交给 `u/oneke/channels/notification`，发送 Telegram 和 FlashDuty，并返回告警数组。
 
-## 第二轮 Flows
+## Aave V4 配置变更
 
-- `aave_v3_liquidations` 按 V3 Pool 地址、chain ID 和用户查询最近 50 条真实 liquidation call。
-- `aave_v4_liquidations` 一次查询指定网络上某用户最近 50 条 `LIQUIDATED` activity。
-- `aave_v3_market_risk` 查询各 reserve 的可用流动性、利用率、Supply/Borrow Cap、冻结和暂停。
-- `aave_v4_market_risk` 查询 reserve 的 token supplied/borrowed、Supply/Borrow Cap、可存入/可借数量和操作状态。
-
-### Aave V4 market risk 与 market params changes
-
-`f/aave/flows/aave_v4_market_risk` 负责流动性、利用率、cap 使用率和操作风险阈值。
-Cap 使用率通过 `max_supply_cap_used_percent` / `max_borrow_cap_used_percent` 配置，
-严格超过阈值才触发；持续命中去重，恢复后再次越线会重新触发。
-`spoke_ids` / `reserve_ids` 支持筛选，`market_rules` 支持按 reserve ID 或完整名称覆盖。
-Rules 信赖 Aave API 格式，金额使用 BigInt，阈值判断保留整数精度。
-零 cap 与无限 cap 不做百分比判断；余额与流动性仍是 API 观测／估算。
-
-**配置变更已经拆出**，market risk 不再保留 cap 基线或发送 cap-change 消息。
 配置采集由 `u/oneke/sources/aave_v4_configuration` 调用采集 WAC，
 变更监控由 `u/oneke/monitors/aave_v4_configuration_change` 编排。
 结果直接采用 Reader 的对象图：`Record<chainId, Record<hubAddress, HubGraph>>`。
@@ -101,8 +85,8 @@ viem 解码的 uint8 到 uint48 保留 number；更大的 bigint 仅在 JSON 输
 再执行配置 Source。没有历史 job 时仅采集，不发通知。
 有历史值时调用 `f/chain_sentinel/rules/diff` 比较 `previous.result` 与当前快照，
 生成包含旧值的 JSON Patch；对象字段顺序忽略，数组按下标比较。
-非空 Patch 经 inline Handlebars 模板渲染，再交给 notification Flow。
-历史来自 Source job，不再维护独立 baseline 或 MonitorState；成功采集即进入历史，
+非空 Patch 经 `renderJsonDiff` 分组渲染，再交给 notification Flow。
+历史来自 Source job；成功采集即进入历史，
 即使后续比较或通知失败也不会撤回该次 Source 结果。
 配置 Source 的 RPC 映射列出 Ethereum、Arc、Base、Avalanche。
 
@@ -113,13 +97,6 @@ viem 解码的 uint8 到 uint48 保留 number；更大的 bigint 仅在 JSON 输
 验证未部署的本地子任务时，可在临时目录用伴随模块做隔离预览。
 旧 Hub 资产、Hub–Spoke 额度、reserve、manager 分页 GraphQL 配置链路已删除。
 
-清算 Flow 首次运行默认只建立基线，避免安装后补发全部历史记录。Aave V3 API 的历史接口要求
-单个 Pool 地址，因此一个 V3 清算 Monitor 实例对应一个部署。Aave V3/V4 当前公开响应没有足够的
-Oracle 更新时间/独立参考价或统一坏账字段；本轮不会把缺失值当 0，也不会伪造这两类判断。
-
-状态位于 `{ROOT_FLOW_PATH}/__monitor_state`。不同用户、不同协议实例必须使用不同根 Flow，
-不要把两个会保存状态的 Monitor 子 Flow 塞入同一根 Flow；避免同一根 Flow 并发写入。
-
 只覆盖 API 已索引的仓位和部署，不等同于全链实时扫描。`observed_at` 是 Rule 检查时间，
 不是链上区块时间。目标地址必须是持仓地址，不能由 EOA 自动推断其关联智能钱包。
 API 零债务与 null HF 的解释依赖索引器，不是独立链上验算。
@@ -127,7 +104,7 @@ API 零债务与 null HF 的解释依赖索引器，不是独立链上验算。
 API：<https://api.v4.aave.com/graphql>；架构说明：
 [Aave Pro User Guide](https://aave.com/blog/aave-pro-user-guide)。
 
-本地检查在 `windmill-impl` 下运行 `npm test`、`npx tsc --noEmit`、`npm run check`。
+本地检查在项目根目录运行 `npm test`、`npm run check`。
 在 Windmill 中只读测试 Source 可使用
 `wmill script preview f/aave/sources/v4/chains.gql -d '<包含 api 的 JSON>'`，
 再运行 `wmill script preview f/aave/sources/v4/user_positions.gql -d '<包含 api、user、非空 chain_ids 的 JSON>'`。

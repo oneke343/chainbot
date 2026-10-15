@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { JobService } from "windmill-client";
 import { getJobHistory, getLatestJobResult } from "../f/wmm/wm_job_history.ts";
 
-type JobFixture = { id: string; args?: Record<string, unknown> | null; result: unknown };
+type JobFixture = { job_kind: string; id: string; args?: Record<string, unknown> | null; result: unknown };
 type ListQuery = Parameters<typeof JobService.listCompletedJobs>[0];
 
 function mockHistory(t: TestContext, pages: JobFixture[][]) {
@@ -27,7 +27,7 @@ function mockHistory(t: TestContext, pages: JobFixture[][]) {
 
 test("history queries successful jobs with named filters and ordinary JSON input", async (t) => {
   const input = { network: "mainnet", market: { id: 1 } };
-  const job = { id: "latest", args: input, result: { cap: 100 } };
+  const job = { job_kind: "flow", id: "latest", args: input, result: { cap: 100 } };
   const queries = mockHistory(t, [[job]]);
   const query = {
     kind: "flow", path: "f/aave/source", input,
@@ -44,10 +44,10 @@ test("history queries successful jobs with named filters and ordinary JSON input
 
 test("exact input matching skips containment matches across pages and ignores property order", async (t) => {
   const input = { network: "mainnet", market: { id: 1 } };
-  const match = { id: "exact", args: { market: { id: 1 }, network: "mainnet" }, result: 100 };
+  const match = { job_kind: "flow", id: "exact", args: { market: { id: 1 }, network: "mainnet" }, result: 100 };
   const queries = mockHistory(t, [[
-    { id: "extra", args: { ...input, extra: true }, result: 200 },
-    { id: "nested-extra", args: { ...input, market: { id: 1, extra: true } }, result: 300 },
+    { job_kind: "flow", id: "extra", args: { ...input, extra: true }, result: 200 },
+    { job_kind: "flow", id: "nested-extra", args: { ...input, market: { id: 1, extra: true } }, result: 300 },
   ], [match]]);
 
   assert.deepEqual(await Array.fromAsync(getJobHistory("test", {
@@ -61,10 +61,10 @@ test("exact input matching skips containment matches across pages and ignores pr
 
 test("empty input matches only jobs with absent, null or empty args", async (t) => {
   const jobs = [
-    { id: "absent", result: 1 },
-    { id: "null", args: null, result: 2 },
-    { id: "empty", args: {}, result: 3 },
-    { id: "with-input", args: { network: "mainnet" }, result: 4 },
+    { job_kind: "flow", id: "absent", result: 1 },
+    { job_kind: "flow", id: "null", args: null, result: 2 },
+    { job_kind: "flow", id: "empty", args: {}, result: 3 },
+    { job_kind: "flow", id: "with-input", args: { network: "mainnet" }, result: 4 },
   ];
   const queries = mockHistory(t, [jobs]);
   assert.deepEqual(await Array.fromAsync(getJobHistory("test", {
@@ -74,18 +74,18 @@ test("empty input matches only jobs with absent, null or empty args", async (t) 
 });
 
 test("omitting input returns jobs regardless of args", async (t) => {
-  const jobs = [{ id: "absent", result: null }, { id: "with-input", args: { id: 1 }, result: false }];
+  const jobs = [{ job_kind: "flow", id: "absent", result: null }, { job_kind: "flow", id: "with-input", args: { id: 1 }, result: false }];
   const queries = mockHistory(t, [jobs]);
   assert.deepEqual(await Array.fromAsync(getJobHistory("test", { path: "f/aave/source" })), jobs);
   assert.equal(queries[0].args, undefined);
 });
 
 test("latest uses one job per page and stops at the first exact match", async (t) => {
-  const match = { id: "match", args: {}, result: 0 };
+  const match = { job_kind: "flow", id: "match", args: {}, result: 0 };
   const queries = mockHistory(t, [
-    [{ id: "skip", args: { network: "mainnet" }, result: 1 }],
+    [{ job_kind: "flow", id: "skip", args: { network: "mainnet" }, result: 1 }],
     [match],
-    [{ id: "older", args: {}, result: 2 }],
+    [{ job_kind: "flow", id: "older", args: {}, result: 2 }],
   ]);
   assert.equal(await getLatestJobResult("test", { path: "f/aave/source", input: {}, perPage: 50 }), match);
   assert.deepEqual(queries.map(({ page, perPage }) => ({ page, perPage })), [
@@ -100,9 +100,9 @@ test("missing history returns an empty sequence and latest returns null", async 
 });
 
 test("oversized results are loaded only for matching jobs without changing stored details", async (t) => {
-  const job = { id: "large", args: {}, result: "WINDMILL_TOO_BIG" };
+  const job = { job_kind: "flow", id: "large", args: {}, result: "WINDMILL_TOO_BIG" };
   mockHistory(t, [[
-    { id: "skip", args: { id: 1 }, result: "WINDMILL_TOO_BIG" }, job,
+    { job_kind: "flow", id: "skip", args: { id: 1 }, result: "WINDMILL_TOO_BIG" }, job,
   ]]);
   const result = { configuration: [1, 2, 3] };
   const fetchResult = t.mock.method(JobService, "getCompletedJobResult", async (query: Parameters<typeof JobService.getCompletedJobResult>[0]) => {
@@ -117,7 +117,7 @@ test("oversized results are loaded only for matching jobs without changing store
 });
 
 test("history propagates list, job detail and oversized result failures", async (t) => {
-  mockHistory(t, [[{ id: "large", result: "WINDMILL_TOO_BIG" }]]);
+  mockHistory(t, [[{ job_kind: "flow", id: "large", result: "WINDMILL_TOO_BIG" }]]);
   const query = { path: "f/aave/source" };
   const resultFailure = new Error("result unavailable");
   t.mock.method(JobService, "getCompletedJobResult", async () => { throw resultFailure; });

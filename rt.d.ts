@@ -17,12 +17,6 @@ declare namespace RT {
     bearer_token?: string;
     custom_headers?: Record<string, string>;
   }
-  interface CHttpConnection {
-    base_url: string;
-    bearer_token?: string;
-    headers?: Record<string, string>;
-  }
-
   interface Telegram {
     token: string;
   }
@@ -37,21 +31,5 @@ declare namespace RT {
     description: string;
     severity: "info" | "warning" | "critical";
     fields: Record<string, unknown>;
-  }
-
-  interface CMonitorOutput {
-    matched: boolean;
-    messages: {
-      title: string;
-      description: string;
-      fields?: Record<string, unknown>;
-    }[];
-    fields: Record<string, unknown>;
-  }
-
-  interface CMonitorState {
-    inputs: Record<string, unknown>;
-    states: Record<string, unknown>;
-    outputs: CMonitorOutput;
   }
 }

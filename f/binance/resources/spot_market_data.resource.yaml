@@ -1,5 +1,0 @@
-description: Binance public market-data-only REST API.
-resource_type: c_http_connection
-value:
-  base_url: https://data-api.binance.vision
-  headers: {}

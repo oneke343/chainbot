@@ -5,7 +5,6 @@ import jsonpatch from "fast-json-patch";
 import { main as monitor } from "../u/oneke/monitors/aave_v4_configuration_change.ts";
 import { main as readPrevious } from "../f/chain_sentinel/sources/previous.ts";
 import { main as calculateDiff } from "../f/chain_sentinel/rules/diff.ts";
-import { main as render } from "../f/handlebars/render.ts";
 
 const sourcePath = "u/oneke/sources/aave_v4_configuration";
 const current = { "1": { hub: { cap: 200 } } };
@@ -51,20 +50,12 @@ test("WAC reads history before collection, renders changes and checkpoints notif
   assert.deepEqual(jsonpatch.applyPatch(structuredClone(before), patch, true).newDocument, current);
   completed_steps[comparison.key] = patch;
 
-  const rendering = await nextDispatch(completed_steps);
-  assert.equal(rendering.script, "f/handlebars/render");
-  assert.equal(rendering.dispatch_type, "script");
-  assert.deepEqual(Object.keys(rendering.args).sort(), ["context", "template"]);
-  assert.deepEqual(rendering.args.context, { patch });
-  const description = await render(rendering.args.template, rendering.args.context);
-  assert.match(description, /Replaced \/1\/hub\/cap: 100 -> 200/);
-  completed_steps[rendering.key] = description;
-
   const notification = await nextDispatch(completed_steps);
   assert.equal(notification.script, "u/oneke/channels/notification");
   assert.equal(notification.dispatch_type, "flow");
   assert.deepEqual(notification.args, { message: {
-    level: "info", title: "Aave v4 configuration change detected", description,
+    level: "info", title: "Aave v4 configuration change detected",
+    description: "检测到 1 项变化：修改 1，新增 0，删除 0\n\n/1/hub\n  修改 cap：100 → 200",
   } });
   completed_steps[notification.key] = { delivered: true };
 
@@ -123,19 +114,16 @@ test("removing all configuration renders a removal and sends notification", asyn
   const completed_steps: Record<string, unknown> = {
     previous: { result: current }, aave_v4_configuration: {}, diff: patch,
   };
-  const rendering = await nextDispatch(completed_steps);
-  const description = await render(rendering.args.template, rendering.args.context);
-  assert.match(description, /Removed \/1:/);
-  completed_steps[rendering.key] = description;
   const notification = await nextDispatch(completed_steps);
   assert.equal(notification.script, "u/oneke/channels/notification");
-  assert.equal(notification.args.message.description, description);
+  assert.match(notification.args.message.description, /删除 1：/);
+  assert.match(notification.args.message.description, /"cap": 200/);
   completed_steps[notification.key] = { delivered: true };
   wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
   assert.equal(await monitor(), undefined);
 });
 
-test("WAC propagates history, Source, diff, rendering and notification failures", async (t) => {
+test("WAC propagates history, Source, diff and notification failures", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const failure = { __wmill_error: true, message: "Task failed" };
   const changes = {
@@ -146,8 +134,7 @@ test("WAC propagates history, Source, diff, rendering and notification failures"
     { previous: failure },
     { previous: { result: current }, aave_v4_configuration: failure },
     { previous: { result: current }, aave_v4_configuration: current, diff: failure },
-    { ...changes, render: failure },
-    { ...changes, render: "Changes detected", notification: failure },
+    { ...changes, notification: failure },
   ]) {
     const ctx = new wmill.WorkflowCtx({ completed_steps });
     wmill.setWorkflowCtx(ctx);
@@ -165,7 +152,7 @@ test("previous value comes from the latest successful Source job", async (t) => 
     assert.equal(query.perPage, 1);
     return [{ id: "previous-job" }];
   });
-  const job = { result: current };
+  const job = { id: "previous-job", job_kind: "flow", result: current };
   t.mock.method(JobService, "getCompletedJob", async () => job);
   assert.equal(await readPrevious(sourcePath), job);
 });
