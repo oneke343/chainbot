@@ -3,6 +3,7 @@ includes:
   - 'c_*.resource-type.yaml'
   - f/aave/**
   - f/binance/**
+  - f/okx/**
   - f/morpho/**
   - f/spark/** # Retain sync scope until remote deletion is deployed.
   - f/chain_sentinel/**

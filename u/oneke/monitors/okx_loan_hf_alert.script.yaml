@@ -1,0 +1,22 @@
+summary: Monitor OKX Flexible Loan health factors
+description: Collect Flexible Loans, evaluate health factors, and route alerts
+  through the existing notification channel.
+lock: '!inline u/oneke/monitors/okx_loan_hf_alert.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    connection:
+      type: object
+      format: resource-c_okx
+    thresholds:
+      type: object
+      default: {}
+      description: Optional health factor thresholds keyed by OKX Flexible Loan ordId.
+    defaultThreshold:
+      type: number
+      default: 1.2
+      description: Alert when health factor is strictly below this value.
+  required:
+    - connection

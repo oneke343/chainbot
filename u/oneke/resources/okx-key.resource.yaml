@@ -1,0 +1,7 @@
+description: OKX Flexible Loan API credentials. Populate before enabling the monitor.
+resource_type: c_okx
+value:
+  url: https://openapi.okx.com
+  api_key: '$var:u/oneke/variables/okx_api_key'
+  api_secret: '$var:u/oneke/variables/okx_secret_key'
+  passphrase: '$var:u/oneke/variables/okx_passphrase'

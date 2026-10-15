@@ -1,0 +1,23 @@
+summary: Evaluate OKX Flexible Loan health factors
+description: Compare liquidation LTV divided by current LTV with thresholds
+  keyed by loan order ID.
+lock: '!inline f/okx/rules/hf.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    positions:
+      type: array
+      items:
+        type: object
+    thresholds:
+      type: object
+      default: {}
+      description: Optional health factor thresholds keyed by OKX Flexible Loan ordId.
+    defaultThreshold:
+      type: number
+      default: 1.2
+      description: Alert when health factor is strictly below this value.
+  required:
+    - positions

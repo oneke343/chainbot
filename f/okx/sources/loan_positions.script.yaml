@@ -1,0 +1,17 @@
+summary: Fetch OKX Flexible Loan positions
+description: Fetch Flexible Loan records with collateral, debt, and LTV data.
+lock: '!inline f/okx/sources/loan_positions.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    connection:
+      type: object
+      format: resource-c_okx
+    order_id:
+      type: string
+      originalType: string
+      description: Optional OKX Flexible Loan order ID. Omit to fetch all orders.
+  required:
+    - connection

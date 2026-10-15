@@ -1,4 +1,11 @@
 declare namespace RT {
+  interface COkx {
+    url: string;
+    api_key: string;
+    api_secret: string;
+    passphrase: string;
+  }
+
   interface CBinance {
     url: string;
     api_key: string;
