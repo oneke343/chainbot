@@ -1,0 +1,53 @@
+query AaveV3MarketParams($chain_ids: [ChainId!]!) {
+  markets(request: { chainIds: $chain_ids }) {
+    name
+    address
+    chain { chainId }
+    reserves(request: { reserveType: BOTH }) {
+      underlyingToken { address symbol decimals }
+      aToken { address }
+      vToken { address }
+      usdOracleAddress
+      interestRateStrategyAddress
+      isFrozen
+      isPaused
+      flashLoanEnabled
+      supplyInfo {
+        maxLTV { raw decimals }
+        liquidationThreshold { raw decimals }
+        liquidationBonus { raw decimals }
+        canBeCollateral
+        supplyCap { amount { raw decimals } }
+      }
+      borrowInfo {
+        reserveFactor { raw decimals }
+        borrowCap { amount { raw decimals } }
+        borrowingState
+        baseVariableBorrowRate { raw decimals }
+        variableRateSlope1 { raw decimals }
+        variableRateSlope2 { raw decimals }
+        optimalUsageRate { raw decimals }
+      }
+      isolationModeConfig {
+        canBeCollateral
+        canBeBorrowed
+        debtCeiling { amount { raw decimals } }
+        debtCeilingDecimals
+      }
+    }
+    eModeCategories {
+      id
+      label
+      maxLTV { raw decimals }
+      liquidationThreshold { raw decimals }
+      liquidationPenalty { raw decimals }
+      isolated
+      reserves {
+        underlyingToken { address }
+        canBeCollateral
+        canBeBorrowed
+        hasLtvZero
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+summary: Monitor Aave V3 configuration changes
+description: Compare current configuration with the previous successful Source job and notify on changes.
+lock: '!inline u/oneke/monitors/aave_v3_configuration_change.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties: {}
+  required: []

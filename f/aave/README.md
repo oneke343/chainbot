@@ -45,6 +45,28 @@ thresholds:
 每个命中用户返回一条包含用户、Spoke、网络、HF、配置抵押因子和实际阈值的 error 消息。
 WAC 将非空消息交给 `u/oneke/channels/notification`，发送 Telegram 和 FlashDuty，并返回告警数组。
 
+## Aave V3 配置变更
+
+`u/oneke/sources/aave_v3_configuration` 绑定现有 V3 GraphQL Resource，调用
+`f/aave/sources/v3/market_params`。采集 WAC 复用 `v3/chains` 发现主网，网络列表缓存一天，
+再通过 `market_params_query.gql` 一次查询全部主网的配置，不缓存配置查询。
+查询类型通过现有 Codegen 生成，不使用 SDK 默认 fragment。
+
+快照结构为 `chainId → poolAddress → { name, reserves, eModeCategories }`。
+资产和 eMode 集合按地址、类别 ID 索引，地址统一小写；比例和 cap 用 `raw + decimals`
+无损转换为十进制字符串。保留 `borrowInfo`、旧隔离模式配置的 null。
+不采集价格、APY、余额、利用率、奖励和采样时间，不额外验证 API 类型或添加兜底。
+GraphQL 任务失败直接传播，Source 不返回部分快照。
+
+`u/oneke/monitors/aave_v3_configuration_change` 与 V4 一样，先读取最近成功 Source job，
+再采集、调用通用 diff，并将非空变化交给现有 notification Flow。
+首次采样不通知；Source 成功即进入历史，后续通知失败不回滚基线。
+需补发时恢复失败 Monitor 的通知 checkpoint，下一轮采样不自动补发旧变化。
+
+Schedule 已提供为每三分钟第 12 秒执行、禁止重叠，默认 `enabled: false`。
+纯 GraphQL 仅监控 API 支持的配置采样差异，不代表链上逐笔修改或升级、权限审计。
+完整字段和范围见 [V3 配置监控设计](V3_CONFIGURATION_PLAN.md)。
+
 ## Aave V4 配置变更
 
 配置采集由 `u/oneke/sources/aave_v4_configuration` 调用采集 WAC，

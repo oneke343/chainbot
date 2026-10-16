@@ -1,0 +1,13 @@
+summary: Collect Aave V3 market params
+description: Discover mainnets and collect stable configuration snapshots with one GraphQL query.
+lock: '!inline f/aave/sources/v3/market_params.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    api:
+      type: object
+      format: resource-graphql
+  required:
+    - api
