@@ -23,7 +23,9 @@ async function nextStep(completed_steps: Record<string, unknown>) {
 
 test("Monitor reads Source history before sampling, compares snapshots and checkpoints notification", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
-  t.mock.method(globalThis, "fetch", () => { throw new Error("workflow body must not perform HTTP requests"); });
+  t.mock.method(globalThis, "fetch", () => {
+    throw new Error("workflow body must not perform HTTP requests");
+  });
   const completed_steps: Record<string, unknown> = {};
   const history = await nextStep(completed_steps);
   assert.equal(history.script, "f/chain_sentinel/sources/previous");
@@ -41,10 +43,14 @@ test("Monitor reads Source history before sampling, compares snapshots and check
   completed_steps[comparison.key] = await calculateDiff(before, current);
   const notification = await nextStep(completed_steps);
   assert.equal(notification.script, "u/oneke/channels/notification");
-  assert.deepEqual(notification.args, { message: {
-    level: "info", title: "Aave v3 configuration snapshot changed",
-    description: '检测到 1 项变化：修改 1，新增 0，删除 0\n\n/1/pool\n  修改 supplyCap："100" → "200"\n\n比例 1=100%；金额单位为 token；变化来自 API 两次采样。',
-  } });
+  assert.deepEqual(notification.args, {
+    message: {
+      level: "info",
+      title: "Aave v3 configuration snapshot changed",
+      description:
+        '检测到 1 项变化：修改 1，新增 0，删除 0\n\n/1/pool\n  修改 supplyCap："100" → "200"\n\n比例 1=100%；debtCeilingUsd 单位为 USD，其余金额单位为 token；变化来自 API 两次采样。',
+    },
+  });
   completed_steps[notification.key] = { delivered: true };
   const checkpoint = structuredClone(completed_steps);
   const ctx = new wmill.WorkflowCtx({ completed_steps });
@@ -66,9 +72,50 @@ test("first sample creates Source history without diff or notification", async (
   assert.deepEqual(ctx._flushPending(), []);
 });
 
+test("a real USD debt ceiling change is notified with explicit currency", async (t) => {
+  t.after(() => wmill.setWorkflowCtx(null));
+  const before = {
+    "1088": {
+      pool: {
+        reserves: {
+          metis: {
+            isolationModeConfig: { debtCeilingUsd: "1000000" },
+          },
+        },
+      },
+    },
+  };
+  const current = structuredClone(before);
+  current["1088"].pool.reserves.metis.isolationModeConfig.debtCeilingUsd =
+    "1000000.01";
+  const completed_steps: Record<string, unknown> = {
+    previous: { result: before },
+    aave_v3_configuration: current,
+  };
+  const comparison = await nextStep(completed_steps);
+  assert.deepEqual(comparison.args, { before, after: current });
+  completed_steps[comparison.key] = await calculateDiff(before, current);
+  const notification = await nextStep(completed_steps);
+  assert.equal(notification.script, "u/oneke/channels/notification");
+  assert.match(
+    notification.args.message.description,
+    /修改 debtCeilingUsd："1000000" → "1000000\.01"/,
+  );
+  assert.match(
+    notification.args.message.description,
+    /debtCeilingUsd 单位为 USD/,
+  );
+  completed_steps[notification.key] = { delivered: true };
+  wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
+  assert.equal(await monitor(), undefined);
+});
+
 test("unchanged sampling does not notify or return a Monitor snapshot", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
-  const completed_steps: Record<string, unknown> = { previous: { result: current }, aave_v3_configuration: current };
+  const completed_steps: Record<string, unknown> = {
+    previous: { result: current },
+    aave_v3_configuration: current,
+  };
   const comparison = await nextStep(completed_steps);
   completed_steps[comparison.key] = await calculateDiff(current, current);
   const ctx = new wmill.WorkflowCtx({ completed_steps });
@@ -84,15 +131,31 @@ test("failures propagate; subsequent runs use the successful Source even after n
   for (const completed_steps of [
     { previous: failure },
     { previous: { result: before }, aave_v3_configuration: failure },
-    { previous: { result: before }, aave_v3_configuration: current, diff: failure },
-    { previous: { result: before }, aave_v3_configuration: current, diff: patch, notification: failure },
+    {
+      previous: { result: before },
+      aave_v3_configuration: current,
+      diff: failure,
+    },
+    {
+      previous: { result: before },
+      aave_v3_configuration: current,
+      diff: patch,
+      notification: failure,
+    },
   ]) {
     wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
-    await assert.rejects(monitor(), { name: "TaskError", message: "Task failed" });
+    await assert.rejects(monitor(), {
+      name: "TaskError",
+      message: "Task failed",
+    });
   }
-  const ctx = new wmill.WorkflowCtx({ completed_steps: {
-    previous: { result: current }, aave_v3_configuration: current, diff: await calculateDiff(current, current),
-  } });
+  const ctx = new wmill.WorkflowCtx({
+    completed_steps: {
+      previous: { result: current },
+      aave_v3_configuration: current,
+      diff: await calculateDiff(current, current),
+    },
+  });
   wmill.setWorkflowCtx(ctx);
   assert.equal(await monitor(), undefined);
   assert.deepEqual(ctx._flushPending(), []);
