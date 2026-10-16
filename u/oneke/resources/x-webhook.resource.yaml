@@ -1,0 +1,4 @@
+description: X webhook signing credentials. Set the referenced secret before enabling subscriptions.
+resource_type: c_x_webhook
+value:
+  client_secret: $var:u/oneke/variables/x_client_secret

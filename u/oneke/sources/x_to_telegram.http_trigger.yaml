@@ -1,0 +1,11 @@
+summary: Verify X post events and enqueue Telegram notifications
+script_path: u/oneke/sources/x_to_telegram
+is_flow: false
+route_path: x/events
+http_method: post
+request_type: sync
+authentication_method: none
+is_static_website: false
+workspaced_route: true
+wrap_body: true
+raw_string: true

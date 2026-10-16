@@ -1,4 +1,8 @@
 declare namespace RT {
+  interface CXWebhook {
+    client_secret: string;
+  }
+
   interface COkx {
     url: string;
     api_key: string;

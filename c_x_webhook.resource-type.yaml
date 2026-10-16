@@ -1,0 +1,12 @@
+description: X OAuth 2.0 client secret used for CRC and webhook signatures.
+format_extension: null
+is_fileset: false
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    client_secret:
+      type: string
+      password: true
+  required:
+    - client_secret
