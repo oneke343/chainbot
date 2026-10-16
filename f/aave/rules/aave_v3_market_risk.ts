@@ -316,20 +316,9 @@ export interface Notification {
   description: string;
 }
 
-function timestamp(iso: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date(iso));
-}
-
 export async function renderNotifications(
   findings: Finding[],
-  current: ReserveSnapshot,
-  history: ReserveSnapshot[],
 ): Promise<Notification[]> {
-  const window = buildWindow(current, history);
   const groups = new Map<ReserveKey, Finding[]>();
   for (const finding of findings) {
     const group = groups.get(finding.reserveKey) ?? [];
@@ -338,18 +327,6 @@ export async function renderNotifications(
   }
   return Promise.all(
     Array.from(groups, async ([key, hits]) => {
-      const reserve = current.reserves[key];
-      const baseline =
-        window.baseline === null
-          ? null
-          : {
-              sampledAt: timestamp(window.baseline.sampledAt),
-              minutes: (
-                (Date.parse(current.sampledAt) -
-                  Date.parse(window.baseline.sampledAt)) /
-                60_000
-              ).toFixed(1),
-            };
       const warning = hits.some(
         (hit) =>
           !hit.metric.endsWith("cap_usage") &&
@@ -357,13 +334,9 @@ export async function renderNotifications(
       );
       return {
         level: warning ? "warning" : "info",
-        title: await render("Aave V3 {{marketName}} / {{symbol}} 指标提醒", {
-          ...reserve,
-        }),
+        title: "Aave V3 Reserve 指标提醒",
         description: await render(NOTIFICATION_TEMPLATE, {
-          reserve,
-          sampledAt: timestamp(current.sampledAt),
-          baseline,
+          reserveKey: key,
           findings: hits,
         }),
       };
@@ -371,19 +344,11 @@ export async function renderNotifications(
   );
 }
 
-const NOTIFICATION_TEMPLATE = `链：{{reserve.chainId}}
-市场：{{reserve.marketAddress}}
-资产：{{reserve.assetAddress}}
-采样：{{sampledAt}}（Asia/Shanghai）
-{{#if baseline}}
-比较时间：{{baseline.sampledAt}} → {{sampledAt}}（{{baseline.minutes}} 分钟）。
-{{else}}
-历史窗口尚未覆盖 15 分钟，当前仅评估 Cap。
-{{/if}}
+const NOTIFICATION_TEMPLATE = `Reserve：{{reserveKey}}
 
 {{#each findings}}
 - {{metric}} ({{direction}})：{{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}；阈值 {{thresholdBps}} bps。
 {{/each}}
 
-余额单位为 {{reserve.symbol}}；比率 1=100%，APY 差值 0.02=2 个百分点；100 bps=1% 或 1 个百分点，利用率阈值为拐点之上的缓冲值。
+余额单位为底层 token；比率 1=100%，APY 差值 0.02=2 个百分点；100 bps=1% 或 1 个百分点，利用率阈值为拐点之上的缓冲值。
 变化来自 API 采样；供借量为余额变化。`;

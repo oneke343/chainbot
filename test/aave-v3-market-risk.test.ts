@@ -10,6 +10,7 @@ import {
   evaluateBorrowApy,
   evaluateBalances,
   evaluateCaps,
+  type Finding,
 } from "../f/aave/rules/aave_v3_market_risk.ts";
 import {
   key,
@@ -223,7 +224,7 @@ test("Reserve overrides affect only that Reserve and leave defaults unchanged", 
   assert.equal(DEFAULT_CONFIG.defaults.liquidityChangeBps, 2000);
 });
 
-test("notifications aggregate findings by Reserve and show units and actual interval", async () => {
+test("notifications consume only findings and preserve values, units and severity", async () => {
   const before = reserve();
   const current = reserve();
   current.borrow!.availableLiquidity = decimal(400);
@@ -232,10 +233,10 @@ test("notifications aggregate findings by Reserve and show units and actual inte
   const now = snapshot(17, current);
   const old = [snapshot(0, before)];
   const hits = await main(now, old);
-  const messages = await renderNotifications(hits, now, old);
+  const messages = await renderNotifications(hits);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
-  assert.match(messages[0].description, /17\.0 分钟/);
+  assert.ok(messages[0].description.includes(`Reserve：${key}`));
   assert.match(
     messages[0].description,
     /liquidity \(decrease\)：500 → 400；变化 -0\.2；阈值 2000 bps/,
@@ -248,43 +249,97 @@ test("notifications aggregate findings by Reserve and show units and actual inte
     messages[0].description,
     /supply_cap_usage \(above\)：1；阈值 9500 bps/,
   );
-  assert.match(messages[0].description, /余额单位为 USDC；比率 1=100%/);
-  assert.match(messages[0].description, /Asia\/Shanghai/);
-  const capOnly = await renderNotifications(await main(now, []), now, []);
+  assert.match(messages[0].description, /余额单位为底层 token；比率 1=100%/);
+  const capOnly = await renderNotifications(await main(now, []));
   assert.equal(capOnly[0].level, "info");
-  assert.match(capOnly[0].description, /当前仅评估 Cap/);
   const increased = reserve();
   increased.borrow!.availableLiquidity = decimal(600);
   assert.equal(
     (
       await renderNotifications(
         await main(snapshot(15, increased), [snapshot(0)]),
-        snapshot(15, increased),
-        [snapshot(0)],
       )
     )[0].level,
     "info",
   );
 });
 
-test("Handlebars renders all seven metrics and preserves plain-text asset and market names", async () => {
-  const before = reserve();
-  before.marketName = "Core <risk>";
-  before.symbol = "USDC & ETH";
-  before.borrow!.utilizationRate = rate(9200);
-  const current = structuredClone(before);
-  current.totalSupply = decimal(900);
-  current.supplyCap = decimal(900);
-  current.borrow!.totalBorrow = decimal(550);
-  current.borrow!.borrowCap = decimal(550);
-  current.borrow!.availableLiquidity = decimal(400);
-  current.borrow!.apy = rate(700);
-  const now = snapshot(15, current);
-  const old = history(before);
-  const findings = await main(now, old);
-  assert.equal(findings.length, 7);
-  const [message] = await renderNotifications(findings, now, old);
-  assert.equal(message.title, "Aave V3 Core <risk> / USDC & ETH 指标提醒");
+test("Handlebars renders standalone findings and groups reserves without changing their contents", async () => {
+  const findings: Finding[] = [
+    {
+      reserveKey: key,
+      metric: "supply_cap_usage",
+      direction: "above",
+      current: "1",
+      thresholdBps: 9500,
+    },
+    {
+      reserveKey: key,
+      metric: "borrow_cap_usage",
+      direction: "above",
+      current: "1",
+      thresholdBps: 9500,
+    },
+    {
+      reserveKey: key,
+      metric: "liquidity",
+      direction: "decrease",
+      before: "500",
+      current: "400",
+      change: "-0.2",
+      thresholdBps: 2000,
+    },
+    {
+      reserveKey: key,
+      metric: "borrow_apy",
+      direction: "increase",
+      before: "0.05",
+      current: "0.07",
+      change: "0.02",
+      thresholdBps: 200,
+    },
+    {
+      reserveKey: key,
+      metric: "supply_total",
+      direction: "decrease",
+      before: "1000",
+      current: "900",
+      change: "-0.1",
+      thresholdBps: 1000,
+    },
+    {
+      reserveKey: key,
+      metric: "borrow_total",
+      direction: "increase",
+      before: "500",
+      current: "550",
+      change: "0.1",
+      thresholdBps: 1000,
+    },
+    {
+      reserveKey: key,
+      metric: "utilization",
+      direction: "above",
+      current: "0.92",
+      thresholdBps: 200,
+    },
+    {
+      reserveKey: "8453/<pool>&/asset",
+      metric: "supply_cap_usage",
+      direction: "above",
+      current: "0.95",
+      thresholdBps: 9500,
+    },
+  ];
+  const before = structuredClone(findings);
+  const messages = await renderNotifications(findings);
+  assert.equal(messages.length, 2);
+  const [message, other] = messages;
+  assert.equal(message.title, "Aave V3 Reserve 指标提醒");
+  assert.equal(message.level, "warning");
+  assert.equal(other.level, "info");
+  assert.match(other.description, /Reserve：8453\/<pool>&\/asset/);
+  assert.doesNotMatch(other.description, /liquidity/);
   assert.equal(
     message.description.split("\n").filter((line) => line.startsWith("- "))
       .length,
@@ -301,7 +356,7 @@ test("Handlebars renders all seven metrics and preserves plain-text asset and ma
   ])
     assert.ok(message.description.includes(line), line);
   assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);
-  assert.match(message.description, /余额单位为 USDC & ETH/);
   assert.match(message.description, /\n\n- supply_cap_usage/);
-  assert.deepEqual(await renderNotifications([], now, old), []);
+  assert.deepEqual(findings, before);
+  assert.deepEqual(await renderNotifications([]), []);
 });
