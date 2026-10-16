@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - ".github/workflows/windmill-sync.yml"
       - "*.resource-type.yaml"
       - "f/**"
       - "u/**"
@@ -88,6 +89,15 @@ jobs:
             --skip-branch-validation \
             --json-output > "${plan}"; then
             cat "${plan}"
+            wmill \
+              --base-url "${WMILL_BASE_URL}" \
+              --token "${WMILL_TOKEN}" \
+              --workspace "${WMILL_WORKSPACE}" \
+              sync push \
+              --dry-run \
+              --auto-metadata \
+              --skip-secrets \
+              --skip-branch-validation
             exit 1
           fi
           jq . "${plan}"
