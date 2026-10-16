@@ -55,6 +55,9 @@ WAC 将非空消息交给 `u/oneke/channels/notification`，发送 Telegram 和 
 快照结构为 `chainId → poolAddress → { name, reserves, eModeCategories }`。
 资产和 eMode 集合按地址、类别 ID 索引，地址统一小写；比例和 cap 用 `raw + decimals`
 无损转换为十进制字符串。保留 `borrowInfo`、旧隔离模式配置的 null。
+隔离模式的 `debtCeiling` 读取 GraphQL `debtCeiling.usd`，以整数分四舍五入后保存为规范十进制字符串。
+不比较随价格变化的 token 换算数量；价格变化和分以下的换算误差不触发额度告警。
+字段名沿用 `debtCeiling`，值的单位改为 USD；首次与旧版 Source 快照比较可能产生一次单位切换的数值变更通知。
 不采集价格、APY、余额、利用率、奖励和采样时间，不额外验证 API 类型或添加兜底。
 GraphQL 任务失败直接传播，Source 不返回部分快照。
 
