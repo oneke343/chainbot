@@ -54,7 +54,10 @@ test("Monitor collects, reads history once, evaluates and checkpoints notificati
   const notification = await next(completed_steps);
   assert.equal(notification.script, "u/oneke/channels/notification");
   assert.equal(notification.args.message.level, "warning");
-  assert.match(notification.args.message.description, /减少 20\.00%/);
+  assert.match(
+    notification.args.message.description,
+    /liquidity \(decrease\)：500 → 400；变化 -0\.2/,
+  );
   completed_steps[notification.key] = { delivered: true };
   const ctx = new wmill.WorkflowCtx({ completed_steps });
   wmill.setWorkflowCtx(ctx);

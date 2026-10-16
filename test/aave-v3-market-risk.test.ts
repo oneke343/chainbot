@@ -223,7 +223,7 @@ test("Reserve overrides affect only that Reserve and leave defaults unchanged", 
   assert.equal(DEFAULT_CONFIG.defaults.liquidityChangeBps, 2000);
 });
 
-test("notifications aggregate by Reserve, show units, cap changes and actual interval", async () => {
+test("notifications aggregate findings by Reserve and show units and actual interval", async () => {
   const before = reserve();
   const current = reserve();
   current.borrow!.availableLiquidity = decimal(400);
@@ -236,9 +236,19 @@ test("notifications aggregate by Reserve, show units, cap changes and actual int
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
   assert.match(messages[0].description, /17\.0 分钟/);
-  assert.match(messages[0].description, /减少 20\.00%/);
-  assert.match(messages[0].description, /上涨 2\.00 个百分点/);
-  assert.match(messages[0].description, /Cap 10000 → 1000 USDC/);
+  assert.match(
+    messages[0].description,
+    /liquidity \(decrease\)：500 → 400；变化 -0\.2；阈值 2000 bps/,
+  );
+  assert.match(
+    messages[0].description,
+    /borrow_apy \(increase\)：0\.05 → 0\.07；变化 0\.02；阈值 200 bps/,
+  );
+  assert.match(
+    messages[0].description,
+    /supply_cap_usage \(above\)：1；阈值 9500 bps/,
+  );
+  assert.match(messages[0].description, /余额单位为 USDC；比率 1=100%/);
   assert.match(messages[0].description, /Asia\/Shanghai/);
   const capOnly = await renderNotifications(await main(now, []), now, []);
   assert.equal(capOnly[0].level, "info");
@@ -281,17 +291,17 @@ test("Handlebars renders all seven metrics and preserves plain-text asset and ma
     7,
   );
   for (const line of [
-    "- Supply Cap 使用率：100.00%，阈值 95%；当前总量 900；Cap 10000 → 900 USDC & ETH。",
-    "- Borrow Cap 使用率：100.00%，阈值 95%；当前总量 550；Cap 10000 → 550 USDC & ETH。",
-    "- 可用流动性：500 → 400 USDC & ETH；减少 20.00%，阈值 20%。",
-    "- 借款 APY：5.00% → 7.00%；上涨 2.00 个百分点，阈值 2 个百分点。",
-    "- 总供给量：1000 → 900 USDC & ETH；减少 10.00%，阈值 10%。",
-    "- 总借款量：500 → 550 USDC & ETH；增加 10.00%，阈值 10%。",
-    "- 利用率：92.00%；拐点 90.00%；窗口内所有采样均达到各自拐点 + 2 个百分点。",
+    "- supply_cap_usage (above)：1；阈值 9500 bps。",
+    "- borrow_cap_usage (above)：1；阈值 9500 bps。",
+    "- liquidity (decrease)：500 → 400；变化 -0.2；阈值 2000 bps。",
+    "- borrow_apy (increase)：0.05 → 0.07；变化 0.02；阈值 200 bps。",
+    "- supply_total (decrease)：1000 → 900；变化 -0.1；阈值 1000 bps。",
+    "- borrow_total (increase)：500 → 550；变化 0.1；阈值 1000 bps。",
+    "- utilization (above)：0.92；阈值 200 bps。",
   ])
     assert.ok(message.description.includes(line), line);
   assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);
-  assert.match(message.description, /\n\n- Supply Cap/);
-  assert.match(message.description, /\n\n变化来自 API/);
+  assert.match(message.description, /余额单位为 USDC & ETH/);
+  assert.match(message.description, /\n\n- supply_cap_usage/);
   assert.deepEqual(await renderNotifications([], now, old), []);
 });

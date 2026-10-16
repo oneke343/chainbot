@@ -316,20 +316,6 @@ export interface Notification {
   description: string;
 }
 
-const labels: Record<Metric, string> = {
-  liquidity: "可用流动性",
-  utilization: "利用率",
-  borrow_apy: "借款 APY",
-  supply_total: "总供给量",
-  borrow_total: "总借款量",
-  supply_cap_usage: "Supply Cap 使用率",
-  borrow_cap_usage: "Borrow Cap 使用率",
-};
-
-function percent(decimal: string): string {
-  return `${(Number(decimal) * 100).toFixed(2)}%`;
-}
-
 function timestamp(iso: string): string {
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -353,62 +339,6 @@ export async function renderNotifications(
   return Promise.all(
     Array.from(groups, async ([key, hits]) => {
       const reserve = current.reserves[key];
-      const rows = hits.map((hit) => {
-        const threshold = hit.thresholdBps / 100;
-        const common = {
-          metric: hit.metric,
-          label: labels[hit.metric],
-          threshold,
-          isCap: hit.metric.endsWith("cap_usage"),
-        };
-        if (hit.metric === "utilization") {
-          return {
-            ...common,
-            current: percent(hit.current),
-            kink: percent(value(reserve.borrow!.optimalUsageRate)),
-          };
-        }
-        if (
-          hit.metric === "supply_cap_usage" ||
-          hit.metric === "borrow_cap_usage"
-        ) {
-          const total =
-            hit.metric === "supply_cap_usage"
-              ? reserve.totalSupply
-              : reserve.borrow!.totalBorrow;
-          const cap =
-            hit.metric === "supply_cap_usage"
-              ? reserve.supplyCap
-              : reserve.borrow!.borrowCap;
-          const previous = window.baseline?.reserves[key];
-          const oldCap =
-            hit.metric === "supply_cap_usage"
-              ? previous?.supplyCap
-              : previous?.borrow?.borrowCap;
-          return {
-            ...common,
-            current: percent(hit.current),
-            total: value(total),
-            cap: value(cap),
-            beforeCap: oldCap ? value(oldCap) : null,
-          };
-        }
-        if (hit.metric === "borrow_apy") {
-          return {
-            ...common,
-            before: percent(hit.before!),
-            current: percent(hit.current),
-            change: (Number(hit.change!) * 100).toFixed(2),
-          };
-        }
-        return {
-          ...common,
-          before: hit.before,
-          current: hit.current,
-          direction: hit.direction === "increase" ? "增加" : "减少",
-          change: percent(String(Math.abs(Number(hit.change!)))),
-        };
-      });
       const baseline =
         window.baseline === null
           ? null
@@ -434,7 +364,7 @@ export async function renderNotifications(
           reserve,
           sampledAt: timestamp(current.sampledAt),
           baseline,
-          rows,
+          findings: hits,
         }),
       };
     }),
@@ -451,16 +381,9 @@ const NOTIFICATION_TEMPLATE = `链：{{reserve.chainId}}
 历史窗口尚未覆盖 15 分钟，当前仅评估 Cap。
 {{/if}}
 
-{{#each rows}}
-{{#if (eq metric "utilization")}}
-- 利用率：{{current}}；拐点 {{kink}}；窗口内所有采样均达到各自拐点 + {{threshold}} 个百分点。
-{{else if isCap}}
-- {{label}}：{{current}}，阈值 {{threshold}}%；当前总量 {{total}}；Cap {{#if beforeCap}}{{beforeCap}} → {{/if}}{{cap}} {{@root.reserve.symbol}}。
-{{else if (eq metric "borrow_apy")}}
-- 借款 APY：{{before}} → {{current}}；上涨 {{change}} 个百分点，阈值 {{threshold}} 个百分点。
-{{else}}
-- {{label}}：{{before}} → {{current}} {{@root.reserve.symbol}}；{{direction}} {{change}}，阈值 {{threshold}}%。
-{{/if}}
+{{#each findings}}
+- {{metric}} ({{direction}})：{{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}；阈值 {{thresholdBps}} bps。
 {{/each}}
 
+余额单位为 {{reserve.symbol}}；比率 1=100%，APY 差值 0.02=2 个百分点；100 bps=1% 或 1 个百分点，利用率阈值为拐点之上的缓冲值。
 变化来自 API 采样；供借量为余额变化。`;
