@@ -26,7 +26,7 @@ export const main = workflow(
       await readHistory({
         source_path: sourcePath,
         started_after: new Date(
-          Date.parse(current.sampledAt) - 30 * 60_000,
+          Date.parse(current.sampledAt) - 15 * 60_000,
         ).toISOString(),
         started_before: current.sampledAt,
       });

@@ -30,7 +30,7 @@ export const DEFAULT_CONFIG: RiskConfig = {
   defaults: DEFAULT_THRESHOLDS,
   overrides: {},
 };
-export const WINDOW_MS = 15 * 60_000;
+export const WINDOW_MS = 10* 60_000;
 const BASELINE_TOLERANCE_MS = 3 * 60_000;
 
 export type Metric =
