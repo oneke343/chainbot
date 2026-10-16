@@ -1,5 +1,5 @@
 summary: Evaluate Aave V3 reserve risk metrics
-description: Evaluate 15-minute changes and buffered sustained utilization.
+description: Evaluate 15-minute liquidity, borrow APY and balance changes.
 lock: '!inline f/aave/rules/aave_v3_market_risk.script.lock'
 kind: script
 schema:
@@ -27,12 +27,8 @@ schema:
             supplyDropBps:
               type: number
               description: Supply decrease; 1000 = 10%. No amount floor.
-            utilizationBufferBps:
-              type: number
-              description: Buffer above each sample's kink; 200 = 2 percentage points.
           required:
             - liquidityChangeBps
-            - utilizationBufferBps
             - borrowApyRiseBps
             - supplyDropBps
             - borrowGrowthBps
@@ -53,9 +49,6 @@ schema:
               supplyDropBps:
                 type: integer
                 description: Supply decrease; 1000 = 10%. No amount floor.
-              utilizationBufferBps:
-                type: integer
-                description: Buffer above each sample's kink; 200 = 2 percentage points.
           description: Overrides keyed by chainId/lowercase-market/lowercase-asset.
           format: resource-record
       required:

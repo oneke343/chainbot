@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   main,
-  buildWindow,
+  findBaseline,
   renderNotifications,
   DEFAULT_CONFIG,
   DEFAULT_THRESHOLDS,
@@ -108,9 +108,9 @@ test("near-full and exceeded caps do not alert; balance changes still do", async
   );
 });
 
-test("window chooses a timestamp at or before the target, excludes current/future and sorts history", () => {
+test("baseline chooses a timestamp at or before the target, excludes current/future and sorts history", () => {
   const current = snapshot(18);
-  const window = buildWindow(current, [
+  const baseline = findBaseline(current, [
     snapshot(19),
     snapshot(18),
     snapshot(4),
@@ -120,63 +120,35 @@ test("window chooses a timestamp at or before the target, excludes current/futur
     snapshot(13),
     snapshot(16),
   ]);
-  assert.equal(window.baseline?.sampledAt, snapshot(1).sampledAt);
-  assert.equal(window.samples.length, 7);
-  assert.equal(window.continuous, true);
+  assert.equal(baseline?.sampledAt, snapshot(1).sampledAt);
+  assert.equal(findBaseline(current, [snapshot(-1), snapshot(4)]), null);
   assert.equal(
-    buildWindow(current, [snapshot(-1), snapshot(4)]).baseline,
-    null,
-  );
-  assert.equal(
-    buildWindow(current, [snapshot(0)]).baseline?.sampledAt,
+    findBaseline(current, [snapshot(0)])?.sampledAt,
     snapshot(0).sampledAt,
   );
 });
 
-test("utilization needs the buffer throughout a covered window, not merely a high endpoint", async () => {
+test("persistently high utilization stays quiet while other risk metrics still alert", async () => {
   const high = reserve();
-  high.borrow!.utilizationRate = rate(9200);
-  const current = snapshot(15, high);
-  assert.deepEqual(
-    (await main(current, history(high))).map((hit) => hit.metric),
-    ["utilization"],
-  );
-  const low = structuredClone(high);
-  low.borrow!.utilizationRate = rate(9050);
-  assert.deepEqual(await main(snapshot(15, low), history(low)), []);
-  const interrupted = history(high);
-  interrupted[2].reserves[key].borrow!.utilizationRate = rate(9199);
-  assert.deepEqual(await main(current, interrupted), []);
-  assert.deepEqual(
-    await main(current, [
-      snapshot(0, high),
-      snapshot(9, high),
-      snapshot(12, high),
-    ]),
-    [],
-  );
-  assert.deepEqual(
-    await main(current, [
-      snapshot(3, high),
-      snapshot(6, high),
-      snapshot(9, high),
-      snapshot(12, high),
-    ]),
-    [],
-  );
-});
-
-test("utilization uses each sample's own kink and requires that reserve in every sample", async () => {
-  const high = reserve();
-  high.borrow!.utilizationRate = rate(9200);
+  high.borrow!.utilizationRate = rate(10000);
   const samples = history(high);
-  samples[1].reserves[key].borrow!.optimalUsageRate = rate(9100);
-  assert.deepEqual(await main(snapshot(15, high), samples), []);
-  samples[1].reserves = {};
-  assert.deepEqual(await main(snapshot(15, high), samples), []);
+  for (const minute of [15, 18, 21]) {
+    const current = snapshot(minute, structuredClone(high));
+    assert.deepEqual(await main(current, samples), []);
+    samples.push(current);
+  }
+  const changed = structuredClone(high);
+  changed.borrow!.availableLiquidity = decimal(400);
+  changed.borrow!.apy = rate(700);
+  changed.totalSupply = decimal(900);
+  changed.borrow!.totalBorrow = decimal(550);
+  assert.deepEqual(
+    (await main(snapshot(24, changed), samples)).map((hit) => hit.metric),
+    ["liquidity", "borrow_apy", "supply_total", "borrow_total"],
+  );
 });
 
-test("endpoints still evaluate across a gap but utilization does not", async () => {
+test("endpoint changes still evaluate across sampling gaps", async () => {
   const before = reserve();
   before.borrow!.utilizationRate = rate(9200);
   const current = structuredClone(before);
@@ -306,14 +278,6 @@ test("Handlebars renders standalone findings and groups reserves without changin
     },
     {
       ...names,
-      reserveKey: key,
-      metric: "utilization",
-      direction: "above",
-      current: "0.92",
-      thresholdBps: 200,
-    },
-    {
-      ...names,
       reserveKey: "8453/<pool>&/asset",
       metric: "liquidity",
       direction: "increase",
@@ -334,19 +298,18 @@ test("Handlebars renders standalone findings and groups reserves without changin
   assert.ok(!other.description.includes("8453/<pool>&/asset"));
   assert.doesNotMatch(
     other.description,
-    /borrow_apy|supply_total|borrow_total|utilization/,
+    /borrow_apy|supply_total|borrow_total/,
   );
   assert.equal(
     message.description.split("\n").filter((line) => line.startsWith("- "))
       .length,
-    5,
+    4,
   );
   for (const line of [
     "- liquidity (decrease): 500 → 400；变化 -0.2; 阈值 2000 bps。",
     "- borrow_apy (increase): 0.05 → 0.07；变化 0.02; 阈值 200 bps。",
     "- supply_total (decrease): 1000 → 900；变化 -0.1; 阈值 1000 bps。",
     "- borrow_total (increase): 500 → 550；变化 0.1; 阈值 1000 bps。",
-    "- utilization (above): 0.92; 阈值 200 bps。",
   ])
     assert.ok(message.description.includes(line), line);
   assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);

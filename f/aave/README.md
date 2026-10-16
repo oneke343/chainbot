@@ -87,14 +87,11 @@ Schedule 每三分钟第 12 秒执行、禁止重叠，已启用（`enabled: tru
 | 配置项 | 默认值 | 条件 |
 | --- | --- | --- |
 | `liquidityChangeBps` | 2000 | 可用流动性增加或减少至少 20% |
-| `utilizationBufferBps` | 200 | 全窗口采样均达到各自当时的利率拐点 + 2 个百分点 |
 | `borrowApyRiseBps` | 200 | 借款 APY 上涨至少 2 个百分点，无当前 APY 上限 |
 | `supplyDropBps` | 1000 | 总供给减少至少 10%，无金额过滤 |
 | `borrowGrowthBps` | 1000 | 总借款增加至少 10%，无金额过滤 |
 
-利用率判断要求基准到当前的相邻采样间隔均不超过 6 分钟，且每个采样都有该 Reserve
-及借款信息；中间任一采样跌回触发线以下即不满足。它只证明已采集点的条件，
-不能证明采样间隔内完全没有回落。端点变化规则仍可在中间有采样缺口时判断。
+各规则比较基准与当前快照，中间有采样缺口时仍可判断。
 基准余额为零时跳过对应百分比变化。
 `borrow: null` 的 Reserve 仍判断供给减少。
 
@@ -104,13 +101,12 @@ Monitor 接收 `config`，由 `defaults` 和按 Reserve key 索引的 `overrides
 config:
   defaults:
     liquidityChangeBps: 2000
-    utilizationBufferBps: 200
     borrowApyRiseBps: 200
     supplyDropBps: 1000
     borrowGrowthBps: 1000
   overrides:
     "1/0x市场地址/0x资产地址":
-      utilizationBufferBps: 100
+      liquidityChangeBps: 2500
 ```
 
 同一 Market 下所有命中资产的指标合并成一条通知，按链 ID 和市场地址分组，跨链或不同地址的同名市场分别发送。
@@ -119,6 +115,7 @@ findings 自带 marketName 和 assetName（底层 token 全名），标题展示
 展示 metric、方向、前后值、变化和 bps 阈值。余额单位为底层 token；比率保留 1=100% 的原始口径，APY 差值 0.02=2 个百分点。
 Source 保留 Supply / Borrow Cap 数据供容量查看，动态风险 Monitor 不根据 Cap 使用率告警；
 Cap 参数变化继续由 `aave_v3_configuration_change` 通知。
+Source 保留利用率和利率拐点数据，动态风险 Monitor 不根据高利用率告警。
 流动性增加为 info，其余为 warning；市场内任意指标为 warning 时整条通知为 warning，经现有渠道发送 Telegram。
 持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。
 Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，已启用（`enabled: true`）。
