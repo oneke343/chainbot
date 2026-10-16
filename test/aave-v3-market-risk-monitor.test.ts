@@ -9,8 +9,10 @@ import {
 import {
   key,
   decimal,
+  rate,
   reserve,
   snapshot,
+  history,
 } from "./fixtures/aave-v3-reserves.ts";
 
 async function next(completed_steps: Record<string, unknown>) {
@@ -89,13 +91,19 @@ test("Monitor collects, evaluates and checkpoints one notification for multiple 
   assert.deepEqual(ctx._flushPending(), []);
 });
 
-test("Monitor makes no notification when no rules trigger", async (t) => {
+test("Monitor makes no notification for sustained high utilization alone", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
+  const high = reserve();
+  high.borrow!.utilizationRate = rate(10000);
+  const current = snapshot(15, high);
+  const samples = history(high);
+  const findings = await evaluate(current, samples);
+  assert.deepEqual(findings, []);
   const ctx = new wmill.WorkflowCtx({
     completed_steps: {
-      aave_v3_market_metrics: snapshot(15),
-      history: [],
-      aave_v3_market_risk: [],
+      aave_v3_market_metrics: current,
+      history: samples.map((result) => ({ result })),
+      aave_v3_market_risk: findings,
     },
   });
   wmill.setWorkflowCtx(ctx);

@@ -1,6 +1,6 @@
 summary: Monitor Aave V3 reserve risks
 description: Collect ReserveSnapshot, evaluate successful Source history and
-  notify per reserve. Active conditions notify each run.
+  notify per market. Active conditions notify each run.
 lock: '!inline u/oneke/monitors/aave_v3_market_risk.script.lock'
 kind: script
 schema:
@@ -27,12 +27,8 @@ schema:
             supplyDropBps:
               type: integer
               description: Supply decrease; 1000 = 10%. No amount floor.
-            utilizationBufferBps:
-              type: integer
-              description: Buffer above each sample's kink; 200 = 2 percentage points.
           required:
             - liquidityChangeBps
-            - utilizationBufferBps
             - borrowApyRiseBps
             - supplyDropBps
             - borrowGrowthBps
@@ -53,9 +49,6 @@ schema:
               supplyDropBps:
                 type: integer
                 description: Supply decrease; 1000 = 10%. No amount floor.
-              utilizationBufferBps:
-                type: integer
-                description: Buffer above each sample's kink; 200 = 2 percentage points.
           description: Overrides keyed by chainId/lowercase-market/lowercase-asset.
       required:
         - defaults

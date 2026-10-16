@@ -9,7 +9,6 @@ import type {
 
 export interface RiskThresholds {
   liquidityChangeBps: number;
-  utilizationBufferBps: number;
   borrowApyRiseBps: number;
   supplyDropBps: number;
   borrowGrowthBps: number;
@@ -22,7 +21,6 @@ export interface RiskConfig {
 
 export const DEFAULT_THRESHOLDS: RiskThresholds = {
   liquidityChangeBps: 2000,
-  utilizationBufferBps: 200,
   borrowApyRiseBps: 200,
   supplyDropBps: 1000,
   borrowGrowthBps: 1000,
@@ -34,18 +32,16 @@ export const DEFAULT_CONFIG: RiskConfig = {
 };
 export const WINDOW_MS = 15 * 60_000;
 const BASELINE_TOLERANCE_MS = 3 * 60_000;
-const MAX_SAMPLE_GAP_MS = 6 * 60_000;
 
 export type Metric =
   | "liquidity"
-  | "utilization"
   | "borrow_apy"
   | "supply_total"
   | "borrow_total";
 
 interface MetricFinding {
   metric: Metric;
-  direction: "increase" | "decrease" | "above";
+  direction: "increase" | "decrease";
   before?: string;
   current: string;
   // Signed relative change for balances; signed rate difference for APY (1 = 100%).
@@ -59,53 +55,22 @@ export interface Finding extends MetricFinding {
   assetName: string;
 }
 
-export interface ReserveWindow {
-  current: ReserveSnapshot;
-  baseline: ReserveSnapshot | null;
-  samples: ReserveSnapshot[];
-  continuous: boolean;
-}
-
-export interface ReserveSample {
-  sampledAt: string;
-  metrics: ReserveMetrics;
-}
-
-export function buildWindow(
+export function findBaseline(
   current: ReserveSnapshot,
   history: ReserveSnapshot[],
-): ReserveWindow {
+): ReserveSnapshot | null {
   const target = Date.parse(current.sampledAt) - WINDOW_MS;
   const earlier = history
     .filter(
       (sample) => Date.parse(sample.sampledAt) < Date.parse(current.sampledAt),
     )
     .sort((a, b) => Date.parse(a.sampledAt) - Date.parse(b.sampledAt));
-  const baseline =
+  return (
     earlier.findLast((sample) => {
       const age = target - Date.parse(sample.sampledAt);
       return age >= 0 && age <= BASELINE_TOLERANCE_MS;
-    }) ?? null;
-  const samples =
-    baseline === null
-      ? [current]
-      : [
-          ...earlier.filter(
-            (sample) =>
-              Date.parse(sample.sampledAt) >= Date.parse(baseline.sampledAt),
-          ),
-          current,
-        ];
-  const continuous =
-    baseline !== null &&
-    samples.every(
-      (sample, index) =>
-        index === 0 ||
-        Date.parse(sample.sampledAt) -
-          Date.parse(samples[index - 1].sampledAt) <=
-          MAX_SAMPLE_GAP_MS,
-    );
-  return { current, baseline, samples, continuous };
+    }) ?? null
+  );
 }
 
 function aligned(a: Decimal, b: Decimal): [bigint, bigint, number] {
@@ -170,33 +135,6 @@ export function evaluateLiquidity(
   );
 }
 
-export function evaluateUtilization(
-  samples: ReserveSample[],
-  thresholds: RiskThresholds,
-): MetricFinding[] {
-  for (const { metrics } of samples) {
-    if (metrics.borrow === null) return [];
-    const [usage, kink, decimals] = aligned(
-      metrics.borrow.utilizationRate,
-      metrics.borrow.optimalUsageRate,
-    );
-    if (
-      (usage - kink) * 10000n <
-      BigInt(thresholds.utilizationBufferBps) * 10n ** BigInt(decimals)
-    )
-      return [];
-  }
-  const current = samples[samples.length - 1].metrics.borrow!;
-  return [
-    {
-      metric: "utilization",
-      direction: "above",
-      current: value(current.utilizationRate),
-      thresholdBps: thresholds.utilizationBufferBps,
-    },
-  ];
-}
-
 export function evaluateBorrowApy(
   before: ReserveMetrics,
   current: ReserveMetrics,
@@ -254,12 +192,12 @@ export async function main(
   history: ReserveSnapshot[],
   config: RiskConfig = DEFAULT_CONFIG,
 ): Promise<Finding[]> {
-  const window = buildWindow(current, history);
+  const baseline = findBaseline(current, history);
   const findings: Finding[] = [];
   for (const [key, reserve] of Object.entries(current.reserves)) {
     const thresholds = { ...config.defaults, ...config.overrides[key] };
     const hits: MetricFinding[] = [];
-    const before = window.baseline?.reserves[key];
+    const before = baseline?.reserves[key];
     if (before !== undefined) {
       hits.push(
         ...evaluateLiquidity(before, reserve, thresholds),
@@ -267,14 +205,6 @@ export async function main(
         ...evaluateBalances(before, reserve, thresholds),
       );
     }
-    const samples = window.samples.flatMap((sample) => {
-      const metrics = sample.reserves[key];
-      return metrics === undefined
-        ? []
-        : [{ sampledAt: sample.sampledAt, metrics }];
-    });
-    if (window.continuous && samples.length === window.samples.length)
-      hits.push(...evaluateUtilization(samples, thresholds));
     findings.push(
       ...hits.map((hit) => ({
         ...hit,
