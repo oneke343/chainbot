@@ -116,6 +116,7 @@ config:
 ```
 
 同一 Reserve 的触发项合并成一条通知，包含前后值、单位、实际比较时间和阈值。
+通知使用共享 `f/handlebars/render` 和 Handlebars 模板渲染，保留纯文本及严格字段检查。
 Cap 使用率用各自资产单位的总量除以 Cap，通知同时展示总量和 Cap 的前后上限，
 帮助识别参数下调；它不等同于链上交易容量的精确预检。
 流动性增加和 Cap 为 info，其余为 warning，经现有渠道发送 Telegram。

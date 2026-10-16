@@ -232,7 +232,7 @@ test("notifications aggregate by Reserve, show units, cap changes and actual int
   const now = snapshot(17, current);
   const old = [snapshot(0, before)];
   const hits = await main(now, old);
-  const messages = renderNotifications(hits, now, old);
+  const messages = await renderNotifications(hits, now, old);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
   assert.match(messages[0].description, /17\.0 分钟/);
@@ -240,17 +240,58 @@ test("notifications aggregate by Reserve, show units, cap changes and actual int
   assert.match(messages[0].description, /上涨 2\.00 个百分点/);
   assert.match(messages[0].description, /Cap 10000 → 1000 USDC/);
   assert.match(messages[0].description, /Asia\/Shanghai/);
-  const capOnly = renderNotifications(await main(now, []), now, []);
+  const capOnly = await renderNotifications(await main(now, []), now, []);
   assert.equal(capOnly[0].level, "info");
   assert.match(capOnly[0].description, /当前仅评估 Cap/);
   const increased = reserve();
   increased.borrow!.availableLiquidity = decimal(600);
   assert.equal(
-    renderNotifications(
-      await main(snapshot(15, increased), [snapshot(0)]),
-      snapshot(15, increased),
-      [snapshot(0)],
+    (
+      await renderNotifications(
+        await main(snapshot(15, increased), [snapshot(0)]),
+        snapshot(15, increased),
+        [snapshot(0)],
+      )
     )[0].level,
     "info",
   );
+});
+
+test("Handlebars renders all seven metrics and preserves plain-text asset and market names", async () => {
+  const before = reserve();
+  before.marketName = "Core <risk>";
+  before.symbol = "USDC & ETH";
+  before.borrow!.utilizationRate = rate(9200);
+  const current = structuredClone(before);
+  current.totalSupply = decimal(900);
+  current.supplyCap = decimal(900);
+  current.borrow!.totalBorrow = decimal(550);
+  current.borrow!.borrowCap = decimal(550);
+  current.borrow!.availableLiquidity = decimal(400);
+  current.borrow!.apy = rate(700);
+  const now = snapshot(15, current);
+  const old = history(before);
+  const findings = await main(now, old);
+  assert.equal(findings.length, 7);
+  const [message] = await renderNotifications(findings, now, old);
+  assert.equal(message.title, "Aave V3 Core <risk> / USDC & ETH 指标提醒");
+  assert.equal(
+    message.description.split("\n").filter((line) => line.startsWith("- "))
+      .length,
+    7,
+  );
+  for (const line of [
+    "- Supply Cap 使用率：100.00%，阈值 95%；当前总量 900；Cap 10000 → 900 USDC & ETH。",
+    "- Borrow Cap 使用率：100.00%，阈值 95%；当前总量 550；Cap 10000 → 550 USDC & ETH。",
+    "- 可用流动性：500 → 400 USDC & ETH；减少 20.00%，阈值 20%。",
+    "- 借款 APY：5.00% → 7.00%；上涨 2.00 个百分点，阈值 2 个百分点。",
+    "- 总供给量：1000 → 900 USDC & ETH；减少 10.00%，阈值 10%。",
+    "- 总借款量：500 → 550 USDC & ETH；增加 10.00%，阈值 10%。",
+    "- 利用率：92.00%；拐点 90.00%；窗口内所有采样均达到各自拐点 + 2 个百分点。",
+  ])
+    assert.ok(message.description.includes(line), line);
+  assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);
+  assert.match(message.description, /\n\n- Supply Cap/);
+  assert.match(message.description, /\n\n变化来自 API/);
+  assert.deepEqual(await renderNotifications([], now, old), []);
 });
