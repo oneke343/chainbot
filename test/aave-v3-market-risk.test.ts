@@ -20,6 +20,19 @@ import {
   history,
 } from "./fixtures/aave-v3-reserves.ts";
 
+const values: Finding["currentValues"] = {
+  sampled_at: "2026-10-16T04:15:00.000Z",
+  token: "USDC",
+  supply_total: "900",
+  supply_cap: "10000",
+  borrow_total: "550",
+  liquidity: "400",
+  utilization: "0.61",
+  optimal_usage_rate: "0.9",
+  borrow_apy: "0.07",
+  borrow_cap: "10000",
+};
+
 test("liquidity is bidirectional, percentage-only and inclusive at the threshold", () => {
   const before = reserve();
   before.borrow!.availableLiquidity = decimal(100, 6);
@@ -103,7 +116,9 @@ test("near-full and exceeded caps do not alert; balance changes still do", async
   current.borrow!.borrowCap = decimal(400);
   current.borrow!.totalBorrow = decimal(550);
   assert.deepEqual(
-    (await main(snapshot(15, current), history())).map((hit) => hit.metric),
+    (await main(snapshot(15, current), history()))[0].metrics.map(
+      (hit) => hit.metric,
+    ),
     ["borrow_total"],
   );
 });
@@ -142,10 +157,13 @@ test("persistently high utilization stays quiet while other risk metrics still a
   changed.borrow!.apy = rate(700);
   changed.totalSupply = decimal(900);
   changed.borrow!.totalBorrow = decimal(550);
+  const findings = await main(snapshot(24, changed), samples);
+  assert.equal(findings.length, 1);
   assert.deepEqual(
-    (await main(snapshot(24, changed), samples)).map((hit) => hit.metric),
+    findings[0].metrics.map((hit) => hit.metric),
     ["liquidity", "borrow_apy", "supply_total", "borrow_total"],
   );
+  assert.equal(JSON.stringify(findings).match(/"currentValues":/g)?.length, 1);
 });
 
 test("endpoint changes still evaluate across sampling gaps", async () => {
@@ -154,7 +172,7 @@ test("endpoint changes still evaluate across sampling gaps", async () => {
   const current = structuredClone(before);
   current.borrow!.availableLiquidity = decimal(400);
   assert.deepEqual(
-    (await main(snapshot(15, current), [snapshot(0, before)])).map(
+    (await main(snapshot(15, current), [snapshot(0, before)]))[0].metrics.map(
       (hit) => hit.metric,
     ),
     ["liquidity"],
@@ -174,9 +192,9 @@ test("first sample is quiet; supply-only reserves and zero baselines remain mean
   const current = structuredClone(supplyOnly);
   current.totalSupply = decimal(800);
   assert.deepEqual(
-    (await main(snapshot(15, current), [snapshot(0, supplyOnly)])).map(
-      (hit) => hit.metric,
-    ),
+    (
+      await main(snapshot(15, current), [snapshot(0, supplyOnly)])
+    )[0].metrics.map((hit) => hit.metric),
     ["supply_total"],
   );
 });
@@ -207,6 +225,8 @@ test("notifications consume only findings and preserve values, units and severit
   const now = snapshot(17, current);
   const old = [snapshot(0, before)];
   const hits = await main(now, old);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].metrics.length, 2);
   const messages = await renderNotifications(hits);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
@@ -221,6 +241,23 @@ test("notifications consume only findings and preserve values, units and severit
     messages[0].description,
     /borrow_apy \(increase\): 0\.05 → 0\.07；变化 0\.02; 阈值 200 bps/,
   );
+  assert.match(
+    messages[0].description,
+    /当前指标（金额单位为 token；比率 1=100%）/,
+  );
+  assert.match(messages[0].description, /supply_total: 1000/);
+  assert.match(messages[0].description, /borrow_total: 500/);
+  assert.match(messages[0].description, /liquidity: 400/);
+  assert.match(messages[0].description, /borrow_apy: 0\.07/);
+  assert.match(messages[0].description, /utilization: 0\.5/);
+  assert.match(messages[0].description, /optimal_usage_rate: 0\.9/);
+  assert.match(messages[0].description, /supply_cap: 10000/);
+  assert.match(messages[0].description, /borrow_cap: 10000/);
+  assert.match(
+    messages[0].description,
+    /sampled_at: 2026-10-16T04:17:00\.000Z/,
+  );
+  assert.equal(messages[0].description.match(/当前指标/g)?.length, 1);
   const increased = reserve();
   increased.borrow!.availableLiquidity = decimal(600);
   assert.equal(
@@ -233,58 +270,88 @@ test("notifications consume only findings and preserve values, units and severit
   );
 });
 
+test("supply-only alerts carry precise current values without borrow metrics", async () => {
+  const before = reserve();
+  before.borrow = null;
+  before.totalSupply = decimal("1000000000000000001000", 18);
+  before.supplyCap = decimal("2000000000000000000000", 18);
+  const current = structuredClone(before);
+  current.totalSupply = decimal("900000000000000000900", 18);
+  const findings = await main(snapshot(15, current), [snapshot(0, before)]);
+  assert.equal(findings.length, 1);
+  assert.deepEqual(findings[0].currentValues, {
+    sampled_at: "2026-10-16T04:15:00.000Z",
+    token: "USDC",
+    supply_total: "900.0000000000000009",
+    supply_cap: "2000",
+  });
+  const [message] = await renderNotifications(findings);
+  assert.match(message.description, /supply_total: 900\.0000000000000009/);
+  assert.match(message.description, /supply_cap: 2000/);
+  assert.doesNotMatch(
+    message.description,
+    /borrow_|liquidity|utilization|optimal_usage_rate|undefined/,
+  );
+});
+
 test("Handlebars renders standalone findings and groups reserves without changing their contents", async () => {
-  const names = { marketName: "Core <risk>", assetName: "USD Coin & token" };
+  const names = {
+    marketName: "Core <risk>",
+    assetName: "USD Coin & token",
+    currentValues: values,
+  };
   const findings: Finding[] = [
     {
       ...names,
       reserveKey: key,
-      metric: "liquidity",
-      direction: "decrease",
-      before: "500",
-      current: "400",
-      change: "-0.2",
-      thresholdBps: 2000,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "borrow_apy",
-      direction: "increase",
-      before: "0.05",
-      current: "0.07",
-      change: "0.02",
-      thresholdBps: 200,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "supply_total",
-      direction: "decrease",
-      before: "1000",
-      current: "900",
-      change: "-0.1",
-      thresholdBps: 1000,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "borrow_total",
-      direction: "increase",
-      before: "500",
-      current: "550",
-      change: "0.1",
-      thresholdBps: 1000,
+      metrics: [
+        {
+          metric: "liquidity",
+          direction: "decrease",
+          before: "500",
+          current: "400",
+          change: "-0.2",
+          thresholdBps: 2000,
+        },
+        {
+          metric: "borrow_apy",
+          direction: "increase",
+          before: "0.05",
+          current: "0.07",
+          change: "0.02",
+          thresholdBps: 200,
+        },
+        {
+          metric: "supply_total",
+          direction: "decrease",
+          before: "1000",
+          current: "900",
+          change: "-0.1",
+          thresholdBps: 1000,
+        },
+        {
+          metric: "borrow_total",
+          direction: "increase",
+          before: "500",
+          current: "550",
+          change: "0.1",
+          thresholdBps: 1000,
+        },
+      ],
     },
     {
       ...names,
       reserveKey: "8453/<pool>&/asset",
-      metric: "liquidity",
-      direction: "increase",
-      before: "500",
-      current: "600",
-      change: "0.2",
-      thresholdBps: 2000,
+      metrics: [
+        {
+          metric: "liquidity",
+          direction: "increase",
+          before: "500",
+          current: "600",
+          change: "0.2",
+          thresholdBps: 2000,
+        },
+      ],
     },
   ];
   const before = structuredClone(findings);
@@ -298,7 +365,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
   assert.ok(!other.description.includes("8453/<pool>&/asset"));
   assert.doesNotMatch(
     other.description,
-    /borrow_apy|supply_total|borrow_total/,
+    /^- (borrow_apy|supply_total|borrow_total)/m,
   );
   assert.equal(
     message.description.split("\n").filter((line) => line.startsWith("- "))
@@ -323,24 +390,49 @@ test("notifications group assets by chain and market, with the highest severity 
     reserveKey: key,
     marketName: "Core",
     assetName: "USD Coin",
-    metric: "liquidity",
-    direction: "increase",
-    before: "500",
-    current: "600",
-    change: "0.2",
-    thresholdBps: 2000,
+    currentValues: { ...values, liquidity: "600" },
+    metrics: [
+      {
+        metric: "liquidity",
+        direction: "increase",
+        before: "500",
+        current: "600",
+        change: "0.2",
+        thresholdBps: 2000,
+      },
+    ],
   };
   const findings: Finding[] = [
-    liquidity,
+    {
+      ...liquidity,
+      metrics: [
+        ...liquidity.metrics,
+        {
+          metric: "borrow_total",
+          direction: "increase",
+          before: "500",
+          current: "550",
+          change: "0.1",
+          thresholdBps: 1000,
+        },
+      ],
+    },
     {
       ...liquidity,
       reserveKey: "1/0xpool/0xweth",
       assetName: "Wrapped Ether",
-      direction: "decrease",
-      current: "400",
-      change: "-0.2",
+      currentValues: { ...values, token: "WETH", liquidity: "400" },
+      metrics: [
+        {
+          metric: "liquidity",
+          direction: "decrease",
+          before: "500",
+          current: "400",
+          change: "-0.2",
+          thresholdBps: 2000,
+        },
+      ],
     },
-    { ...liquidity, metric: "borrow_total", thresholdBps: 1000 },
     { ...liquidity, reserveKey: "8453/0xpool/0xasset" },
     { ...liquidity, reserveKey: "1/0xotherpool/0xasset" },
   ];
@@ -357,9 +449,14 @@ test("notifications group assets by chain and market, with the highest severity 
     /资产：USD Coin\n\n- liquidity[^]*- borrow_total[^]*资产：Wrapped Ether\n\n- liquidity \(decrease\)/,
   );
   assert.equal(messages[0].description.match(/资产：USD Coin/g)?.length, 1);
+  assert.equal(messages[0].description.match(/当前指标/g)?.length, 2);
+  assert.match(
+    messages[0].description,
+    /token: USDC[^]*liquidity: 600[^]*资产：Wrapped Ether[^]*token: WETH[^]*liquidity: 400/,
+  );
   assert.doesNotMatch(messages[0].description, /市场：Core/);
   for (const message of messages.slice(1)) {
-    assert.doesNotMatch(message.description, /Wrapped Ether|borrow_total/);
+    assert.doesNotMatch(message.description, /Wrapped Ether|^- borrow_total/m);
     assert.match(message.description, /资产：USD Coin/);
   }
   assert.deepEqual(findings, before);

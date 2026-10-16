@@ -49,10 +49,12 @@ interface MetricFinding {
   thresholdBps: number;
 }
 
-export interface Finding extends MetricFinding {
+export interface Finding {
   reserveKey: ReserveKey;
   marketName: string;
   assetName: string;
+  currentValues: Record<string, string>;
+  metrics: MetricFinding[];
 }
 
 export function findBaseline(
@@ -84,6 +86,28 @@ function aligned(a: Decimal, b: Decimal): [bigint, bigint, number] {
 
 function value(decimal: Decimal): string {
   return formatUnits(BigInt(decimal.raw), decimal.decimals);
+}
+
+function currentValues(
+  reserve: ReserveMetrics,
+  sampledAt: string,
+): Record<string, string> {
+  return {
+    sampled_at: sampledAt,
+    token: reserve.symbol,
+    supply_total: value(reserve.totalSupply),
+    supply_cap: value(reserve.supplyCap),
+    ...(reserve.borrow === null
+      ? {}
+      : {
+          borrow_total: value(reserve.borrow.totalBorrow),
+          liquidity: value(reserve.borrow.availableLiquidity),
+          utilization: value(reserve.borrow.utilizationRate),
+          optimal_usage_rate: value(reserve.borrow.optimalUsageRate),
+          borrow_apy: value(reserve.borrow.apy),
+          borrow_cap: value(reserve.borrow.borrowCap),
+        }),
+  };
 }
 
 function ratio(numerator: bigint, denominator: bigint): string {
@@ -205,14 +229,14 @@ export async function main(
         ...evaluateBalances(before, reserve, thresholds),
       );
     }
-    findings.push(
-      ...hits.map((hit) => ({
-        ...hit,
-        reserveKey: key,
-        marketName: reserve.marketName,
-        assetName: reserve.assetName,
-      })),
-    );
+    if (hits.length === 0) continue;
+    findings.push({
+      reserveKey: key,
+      marketName: reserve.marketName,
+      assetName: reserve.assetName,
+      currentValues: currentValues(reserve, current.sampledAt),
+      metrics: hits,
+    });
   }
   return findings;
 }
@@ -235,8 +259,10 @@ export async function renderNotifications(
   }
   return Promise.all(
     Array.from(groups.values(), async (hits) => {
-      const warning = hits.some(
-        (hit) => hit.metric !== "liquidity" || hit.direction !== "increase",
+      const warning = hits.some((finding) =>
+        finding.metrics.some(
+          (hit) => hit.metric !== "liquidity" || hit.direction !== "increase",
+        ),
       );
       return {
         level: warning ? "warning" : "info",
@@ -244,9 +270,7 @@ export async function renderNotifications(
           finding: hits[0],
         }),
         description: await render(NOTIFICATION_TEMPLATE, {
-          reserves: Object.values(
-            Object.groupBy(hits, (hit) => hit.reserveKey),
-          ),
+          findings: hits,
         }),
       };
     }),
@@ -254,11 +278,16 @@ export async function renderNotifications(
 }
 
 const NOTIFICATION_TEMPLATE = `
-{{#each reserves}}
-资产：{{this.[0].assetName}}
+{{#each findings}}
+资产：{{assetName}}
 
-{{#each this}}
+{{#each metrics}}
 - {{metric}} ({{direction}}): {{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}; 阈值 {{thresholdBps}} bps。
+{{/each}}
+
+当前指标（金额单位为 token；比率 1=100%）
+{{#each currentValues}}
+{{@key}}: {{this}}
 {{/each}}
 
 {{/each}}
