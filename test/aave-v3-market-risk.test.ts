@@ -236,7 +236,9 @@ test("notifications consume only findings and preserve values, units and severit
   const messages = await renderNotifications(hits);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
-  assert.ok(messages[0].description.includes(`Reserve：${key}`));
+  assert.match(messages[0].description, /市场：Core\n资产：USD Coin/);
+  assert.equal(messages[0].title, "Aave V3 Core / USD Coin 指标提醒");
+  assert.ok(!messages[0].description.includes(key));
   assert.match(
     messages[0].description,
     /liquidity \(decrease\)：500 → 400；变化 -0\.2；阈值 2000 bps/,
@@ -265,8 +267,10 @@ test("notifications consume only findings and preserve values, units and severit
 });
 
 test("Handlebars renders standalone findings and groups reserves without changing their contents", async () => {
+  const names = { marketName: "Core <risk>", assetName: "USD Coin & token" };
   const findings: Finding[] = [
     {
+      ...names,
       reserveKey: key,
       metric: "supply_cap_usage",
       direction: "above",
@@ -274,6 +278,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 9500,
     },
     {
+      ...names,
       reserveKey: key,
       metric: "borrow_cap_usage",
       direction: "above",
@@ -281,6 +286,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 9500,
     },
     {
+      ...names,
       reserveKey: key,
       metric: "liquidity",
       direction: "decrease",
@@ -290,6 +296,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 2000,
     },
     {
+      ...names,
       reserveKey: key,
       metric: "borrow_apy",
       direction: "increase",
@@ -299,6 +306,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 200,
     },
     {
+      ...names,
       reserveKey: key,
       metric: "supply_total",
       direction: "decrease",
@@ -308,6 +316,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 1000,
     },
     {
+      ...names,
       reserveKey: key,
       metric: "borrow_total",
       direction: "increase",
@@ -317,6 +326,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 1000,
     },
     {
+      ...names,
       reserveKey: key,
       metric: "utilization",
       direction: "above",
@@ -324,6 +334,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
       thresholdBps: 200,
     },
     {
+      ...names,
       reserveKey: "8453/<pool>&/asset",
       metric: "supply_cap_usage",
       direction: "above",
@@ -335,10 +346,14 @@ test("Handlebars renders standalone findings and groups reserves without changin
   const messages = await renderNotifications(findings);
   assert.equal(messages.length, 2);
   const [message, other] = messages;
-  assert.equal(message.title, "Aave V3 Reserve 指标提醒");
+  assert.equal(
+    message.title,
+    "Aave V3 Core <risk> / USD Coin & token 指标提醒",
+  );
   assert.equal(message.level, "warning");
   assert.equal(other.level, "info");
-  assert.match(other.description, /Reserve：8453\/<pool>&\/asset/);
+  assert.match(other.description, /市场：Core <risk>\n资产：USD Coin & token/);
+  assert.ok(!other.description.includes("8453/<pool>&/asset"));
   assert.doesNotMatch(other.description, /liquidity/);
   assert.equal(
     message.description.split("\n").filter((line) => line.startsWith("- "))

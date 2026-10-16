@@ -8,6 +8,7 @@ query AaveV3MarketMetrics($chain_ids: [ChainId!]!) {
     reserves(request: { reserveType: BOTH }) {
       underlyingToken {
         address
+        name
         symbol
       }
       supplyInfo {

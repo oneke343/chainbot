@@ -21,7 +21,11 @@ const metrics: AaveV3MarketMetricsQuery = {
       chain: { chainId: 1 },
       reserves: [
         {
-          underlyingToken: { address: "0xASSET", symbol: "USDC" },
+          underlyingToken: {
+            address: "0xASSET",
+            name: "USD Coin",
+            symbol: "USDC",
+          },
           supplyInfo: {
             total: decimal("900719925474099312345678", 6),
             supplyCap: { amount: decimal(0, 6) },
@@ -71,6 +75,7 @@ test("Source uses one query for all chains and checkpoints its collection timest
   const result = await main(api);
   assert.equal(result.sampledAt, sampledAt);
   assert.deepEqual(Object.keys(result.reserves), ["1/0xpool/0xasset"]);
+  assert.equal(result.reserves["1/0xpool/0xasset"].assetName, "USD Coin");
   assert.equal(
     result.reserves["1/0xpool/0xasset"].totalSupply.raw,
     "900719925474099312345678",

@@ -16,6 +16,7 @@ export function reserve(): ReserveMetrics {
     marketAddress: "0xpool",
     marketName: "Core",
     assetAddress: "0xasset",
+    assetName: "USD Coin",
     symbol: "USDC",
     totalSupply: decimal(1000),
     supplyCap: decimal(10000),

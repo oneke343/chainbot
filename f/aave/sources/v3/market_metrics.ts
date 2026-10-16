@@ -13,6 +13,7 @@ export interface ReserveMetrics {
   marketAddress: string;
   marketName: string;
   assetAddress: string;
+  assetName: string;
   symbol: string;
   totalSupply: Decimal;
   supplyCap: Decimal;
@@ -59,6 +60,7 @@ export const main = workflow(
           marketAddress: market.address.toLowerCase(),
           marketName: market.name,
           assetAddress: reserve.underlyingToken.address.toLowerCase(),
+          assetName: reserve.underlyingToken.name,
           symbol: reserve.underlyingToken.symbol,
           totalSupply: reserve.supplyInfo.total,
           supplyCap: reserve.supplyInfo.supplyCap.amount,
