@@ -36,7 +36,7 @@ export const main = workflow(
       history,
       config,
     });
-    for (const message of renderNotifications(findings, current, history))
+    for (const message of await renderNotifications(findings, current, history))
       await notify({ message });
     return findings;
   },

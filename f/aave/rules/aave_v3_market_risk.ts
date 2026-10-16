@@ -1,4 +1,5 @@
 import { formatUnits } from "viem";
+import { main as render } from "../../handlebars/render.ts";
 import type {
   Decimal,
   ReserveKey,
@@ -337,11 +338,11 @@ function timestamp(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function renderNotifications(
+export async function renderNotifications(
   findings: Finding[],
   current: ReserveSnapshot,
   history: ReserveSnapshot[],
-): Notification[] {
+): Promise<Notification[]> {
   const window = buildWindow(current, history);
   const groups = new Map<ReserveKey, Finding[]>();
   for (const finding of findings) {
@@ -349,54 +350,117 @@ export function renderNotifications(
     group.push(finding);
     groups.set(finding.reserveKey, group);
   }
-  return Array.from(groups, ([key, hits]) => {
-    const reserve = current.reserves[key];
-    const lines = hits.map((hit) => {
-      const threshold = hit.thresholdBps / 100;
-      if (hit.metric === "utilization") {
-        return `- 利用率：${percent(hit.current)}；拐点 ${percent(value(reserve.borrow!.optimalUsageRate))}；窗口内所有采样均达到各自拐点 + ${threshold} 个百分点。`;
-      }
-      if (
-        hit.metric === "supply_cap_usage" ||
-        hit.metric === "borrow_cap_usage"
-      ) {
-        const total =
-          hit.metric === "supply_cap_usage"
-            ? reserve.totalSupply
-            : reserve.borrow!.totalBorrow;
-        const cap =
-          hit.metric === "supply_cap_usage"
-            ? reserve.supplyCap
-            : reserve.borrow!.borrowCap;
-        const previous = window.baseline?.reserves[key];
-        const oldCap =
-          hit.metric === "supply_cap_usage"
-            ? previous?.supplyCap
-            : previous?.borrow?.borrowCap;
-        const capText = oldCap
-          ? `${value(oldCap)} → ${value(cap)}`
-          : value(cap);
-        return `- ${labels[hit.metric]}：${percent(hit.current)}，阈值 ${threshold}%；当前总量 ${value(total)}；Cap ${capText} ${reserve.symbol}。`;
-      }
-      if (hit.metric === "borrow_apy") {
-        return `- 借款 APY：${percent(hit.before!)} → ${percent(hit.current)}；上涨 ${(Number(hit.change!) * 100).toFixed(2)} 个百分点，阈值 ${threshold} 个百分点。`;
-      }
-      const direction = hit.direction === "increase" ? "增加" : "减少";
-      return `- ${labels[hit.metric]}：${hit.before} → ${hit.current} ${reserve.symbol}；${direction} ${percent(String(Math.abs(Number(hit.change!))))}，阈值 ${threshold}%。`;
-    });
-    const period =
-      window.baseline === null
-        ? "历史窗口尚未覆盖 15 分钟，当前仅评估 Cap。"
-        : `比较时间：${timestamp(window.baseline.sampledAt)} → ${timestamp(current.sampledAt)}（${((Date.parse(current.sampledAt) - Date.parse(window.baseline.sampledAt)) / 60_000).toFixed(1)} 分钟）。`;
-    const warning = hits.some(
-      (hit) =>
-        !hit.metric.endsWith("cap_usage") &&
-        !(hit.metric === "liquidity" && hit.direction === "increase"),
-    );
-    return {
-      level: warning ? "warning" : "info",
-      title: `Aave V3 ${reserve.marketName} / ${reserve.symbol} 指标提醒`,
-      description: `链：${reserve.chainId}\n市场：${reserve.marketAddress}\n资产：${reserve.assetAddress}\n采样：${timestamp(current.sampledAt)}（Asia/Shanghai）\n${period}\n\n${lines.join("\n")}\n\n变化来自 API 采样；供借量为余额变化。`,
-    };
-  });
+  return Promise.all(
+    Array.from(groups, async ([key, hits]) => {
+      const reserve = current.reserves[key];
+      const rows = hits.map((hit) => {
+        const threshold = hit.thresholdBps / 100;
+        const common = {
+          metric: hit.metric,
+          label: labels[hit.metric],
+          threshold,
+          isCap: hit.metric.endsWith("cap_usage"),
+        };
+        if (hit.metric === "utilization") {
+          return {
+            ...common,
+            current: percent(hit.current),
+            kink: percent(value(reserve.borrow!.optimalUsageRate)),
+          };
+        }
+        if (
+          hit.metric === "supply_cap_usage" ||
+          hit.metric === "borrow_cap_usage"
+        ) {
+          const total =
+            hit.metric === "supply_cap_usage"
+              ? reserve.totalSupply
+              : reserve.borrow!.totalBorrow;
+          const cap =
+            hit.metric === "supply_cap_usage"
+              ? reserve.supplyCap
+              : reserve.borrow!.borrowCap;
+          const previous = window.baseline?.reserves[key];
+          const oldCap =
+            hit.metric === "supply_cap_usage"
+              ? previous?.supplyCap
+              : previous?.borrow?.borrowCap;
+          return {
+            ...common,
+            current: percent(hit.current),
+            total: value(total),
+            cap: value(cap),
+            beforeCap: oldCap ? value(oldCap) : null,
+          };
+        }
+        if (hit.metric === "borrow_apy") {
+          return {
+            ...common,
+            before: percent(hit.before!),
+            current: percent(hit.current),
+            change: (Number(hit.change!) * 100).toFixed(2),
+          };
+        }
+        return {
+          ...common,
+          before: hit.before,
+          current: hit.current,
+          direction: hit.direction === "increase" ? "增加" : "减少",
+          change: percent(String(Math.abs(Number(hit.change!)))),
+        };
+      });
+      const baseline =
+        window.baseline === null
+          ? null
+          : {
+              sampledAt: timestamp(window.baseline.sampledAt),
+              minutes: (
+                (Date.parse(current.sampledAt) -
+                  Date.parse(window.baseline.sampledAt)) /
+                60_000
+              ).toFixed(1),
+            };
+      const warning = hits.some(
+        (hit) =>
+          !hit.metric.endsWith("cap_usage") &&
+          !(hit.metric === "liquidity" && hit.direction === "increase"),
+      );
+      return {
+        level: warning ? "warning" : "info",
+        title: await render("Aave V3 {{marketName}} / {{symbol}} 指标提醒", {
+          ...reserve,
+        }),
+        description: await render(NOTIFICATION_TEMPLATE, {
+          reserve,
+          sampledAt: timestamp(current.sampledAt),
+          baseline,
+          rows,
+        }),
+      };
+    }),
+  );
 }
+
+const NOTIFICATION_TEMPLATE = `链：{{reserve.chainId}}
+市场：{{reserve.marketAddress}}
+资产：{{reserve.assetAddress}}
+采样：{{sampledAt}}（Asia/Shanghai）
+{{#if baseline}}
+比较时间：{{baseline.sampledAt}} → {{sampledAt}}（{{baseline.minutes}} 分钟）。
+{{else}}
+历史窗口尚未覆盖 15 分钟，当前仅评估 Cap。
+{{/if}}
+
+{{#each rows}}
+{{#if (eq metric "utilization")}}
+- 利用率：{{current}}；拐点 {{kink}}；窗口内所有采样均达到各自拐点 + {{threshold}} 个百分点。
+{{else if isCap}}
+- {{label}}：{{current}}，阈值 {{threshold}}%；当前总量 {{total}}；Cap {{#if beforeCap}}{{beforeCap}} → {{/if}}{{cap}} {{@root.reserve.symbol}}。
+{{else if (eq metric "borrow_apy")}}
+- 借款 APY：{{before}} → {{current}}；上涨 {{change}} 个百分点，阈值 {{threshold}} 个百分点。
+{{else}}
+- {{label}}：{{before}} → {{current}} {{@root.reserve.symbol}}；{{direction}} {{change}}，阈值 {{threshold}}%。
+{{/if}}
+{{/each}}
+
+变化来自 API 采样；供借量为余额变化。`;
