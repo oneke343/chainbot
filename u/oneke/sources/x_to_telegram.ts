@@ -44,12 +44,12 @@ export async function main(raw_body: string, signature: string) {
     const publishedAt = new Date(post.created_at)
       .toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
     const footer = `发布时间：${publishedAt} +08:00\n原帖：https://x.com/i/web/status/${post.id}`;
-    const job_ids: string[] = [];
+    const notifications: Promise<unknown>[] = [];
 
     // 1700 Unicode characters leave room for the header/footer even with emoji.
     // A media-only post still sends its timestamp and link.
     for (let offset = 0; offset < Math.max(text.length, 1); offset += 1700) {
-      job_ids.push(await wmill.runFlowAsync("u/oneke/channels/notification", {
+      notifications.push(wmill.runFlow("u/oneke/channels/notification", {
         message: {
           level: "info",
           title: `X · ${data.tag}`,
@@ -58,7 +58,7 @@ export async function main(raw_body: string, signature: string) {
       }));
     }
 
-    return { job_ids };
+    return { results: await Promise.all(notifications) };
   } catch (error) {
     // Sync Windmill routes otherwise acknowledge failed scripts with HTTP 200.
     return { wm_status_code: 500, wm_failure: String(error) };

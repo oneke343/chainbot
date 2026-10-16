@@ -3,6 +3,7 @@ import test, { type TestContext } from "node:test";
 import { createHmac } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { setImmediate } from "node:timers/promises";
 import wmill from "windmill-client";
 import { main as crc, preprocessor as crcInput } from "../u/oneke/sources/x_crc.ts";
 import { main as forward, preprocessor as postInput } from "../u/oneke/sources/x_to_telegram.ts";
@@ -13,6 +14,9 @@ const raw = '{"data":{"event_type":"post.create","tag":"@PeckShieldAlert","paylo
 const signature = "sha256=SWsuCS/ZcMVzFYQagHnNJ6DtzJR4KZ180Vq5drqu87A=";
 
 function signingResource(t: TestContext) {
+  t.mock.method(wmill, "runFlowAsync", () => {
+    assert.fail("notifications must use runFlow and wait for completion");
+  });
   return t.mock.method(wmill, "getResource", async (path: string) => {
     assert.equal(path, "u/oneke/resources/x-webhook");
     return { client_secret: secret };
@@ -27,9 +31,9 @@ test("CRC returns the X protocol token using the server-side client secret", asy
   });
 });
 
-test("a signed X post queues the existing info notification without waiting for Telegram", async (t) => {
+test("a signed X post returns the existing info notification result", async (t) => {
   signingResource(t);
-  const enqueue = t.mock.method(wmill, "runFlowAsync", async (path, args) => {
+  const notify = t.mock.method(wmill, "runFlow", async (path, args) => {
     assert.equal(path, "u/oneke/channels/notification");
     assert.deepEqual(args, {
       message: {
@@ -38,22 +42,50 @@ test("a signed X post queues the existing info notification without waiting for 
         description: "Suspicious transaction detected\n\n发布时间：2026-10-16 14:00:00 +08:00\n原帖：https://x.com/i/web/status/1234567890123456789",
       },
     });
-    return "queued-notification-job";
+    return { message_id: 123 };
   });
   const input = await postInput({
     raw_string: raw,
     headers: { "x-twitter-webhooks-signature-oauth2": signature },
   });
   assert.deepEqual(await forward(input.raw_body, input.signature), {
-    job_ids: ["queued-notification-job"],
+    results: [{ message_id: 123 }],
   });
-  assert.equal(enqueue.mock.callCount(), 1);
+  assert.equal(notify.mock.callCount(), 1);
 });
 
-test("altered body, invalid signature and missing signature never enqueue a notification", async (t) => {
+test("notification flows start in parallel and the response waits for every result", async (t) => {
   signingResource(t);
-  const enqueue = t.mock.method(wmill, "runFlowAsync", async () => {
-    assert.fail("an unauthenticated request must not enqueue a notification");
+  const gates = [Promise.withResolvers(), Promise.withResolvers()];
+  let started = 0;
+  const notify = t.mock.method(wmill, "runFlow", () => gates[started++].promise);
+  const event = JSON.parse(raw);
+  event.data.payload.text = "a".repeat(2000);
+  const body = JSON.stringify(event);
+  const sig = "sha256=" + createHmac("sha256", secret).update(body).digest("base64");
+  let settled = false;
+  const response = forward(body, sig).finally(() => { settled = true; });
+  try {
+    await setImmediate();
+    assert.equal(notify.mock.callCount(), 2);
+    assert.equal(settled, false);
+    gates[1].resolve({ message_id: 2 });
+    await setImmediate();
+    assert.equal(settled, false);
+    gates[0].resolve({ message_id: 1 });
+    assert.deepEqual(await response, {
+      results: [{ message_id: 1 }, { message_id: 2 }],
+    });
+  } finally {
+    for (const gate of gates) gate.resolve(undefined);
+    await response;
+  }
+});
+
+test("altered body, invalid signature and missing signature never send a notification", async (t) => {
+  signingResource(t);
+  const notify = t.mock.method(wmill, "runFlow", async () => {
+    assert.fail("an unauthenticated request must not send a notification");
   });
   for (const [body, sig] of [
     [raw.replace("Suspicious", "Untrusted"), signature],
@@ -65,15 +97,15 @@ test("altered body, invalid signature and missing signature never enqueue a noti
     const result = await forward(body, sig);
     assert.equal(result.wm_status_code, 500);
     assert.ok(result.wm_failure);
-    assert.equal("job_ids" in result, false);
+    assert.equal("results" in result, false);
   }
-  assert.equal(enqueue.mock.callCount(), 0);
+  assert.equal(notify.mock.callCount(), 0);
 });
 
-test("signed malformed payloads are rejected before enqueueing", async (t) => {
+test("signed malformed payloads are rejected before notifying", async (t) => {
   signingResource(t);
   const sign = (body: string) => "sha256=" + createHmac("sha256", secret).update(body).digest("base64");
-  const enqueue = t.mock.method(wmill, "runFlowAsync", async () => { throw new Error("Queue unavailable"); });
+  const notify = t.mock.method(wmill, "runFlow", async () => { throw new Error("Telegram unavailable"); });
   const malformed = await forward("not json", sign("not json"));
   assert.equal(malformed.wm_status_code, 500);
   assert.match(malformed.wm_failure, /^SyntaxError:/);
@@ -82,48 +114,48 @@ test("signed malformed payloads are rejected before enqueueing", async (t) => {
     wm_status_code: 500,
     wm_failure: "Error: Unsupported X event: post.delete",
   });
-  assert.equal(enqueue.mock.callCount(), 0);
+  assert.equal(notify.mock.callCount(), 0);
 });
 
-test("queue rejection marks the Windmill Job failed and returns a retryable HTTP error", async (t) => {
+test("notification failure marks the Windmill Job failed and returns a retryable HTTP error", async (t) => {
   signingResource(t);
-  t.mock.method(wmill, "runFlowAsync", async () => { throw new Error("Queue unavailable"); });
+  t.mock.method(wmill, "runFlow", async () => { throw new Error("Telegram unavailable"); });
   const result = await forward(raw, signature);
   assert.deepEqual(result, {
     wm_status_code: 500,
-    wm_failure: "Error: Queue unavailable",
+    wm_failure: "Error: Telegram unavailable",
   });
-  assert.equal("job_ids" in result, false);
+  assert.equal("results" in result, false);
 });
 
-test("resource failures and partial enqueue failures are not acknowledged as success", async (t) => {
+test("resource failures and partial notification failures are not acknowledged as success", async (t) => {
   const resource = signingResource(t);
-  const enqueue = t.mock.method(wmill, "runFlowAsync", async () => "first-job");
+  const notify = t.mock.method(wmill, "runFlow", async () => ({ message_id: 1 }));
   resource.mock.mockImplementationOnce(async () => { throw new Error("Resource unavailable"); });
   assert.deepEqual(await forward(raw, signature), {
     wm_status_code: 500,
     wm_failure: "Error: Resource unavailable",
   });
-  assert.equal(enqueue.mock.callCount(), 0);
+  assert.equal(notify.mock.callCount(), 0);
 
-  enqueue.mock.mockImplementationOnce(async () => { throw new Error("Second enqueue failed"); }, 1);
+  notify.mock.mockImplementationOnce(async () => { throw new Error("Second notification failed"); }, 1);
   const event = JSON.parse(raw);
   event.data.payload.text = "a".repeat(2000);
   const body = JSON.stringify(event);
   const sig = "sha256=" + createHmac("sha256", secret).update(body).digest("base64");
   assert.deepEqual(await forward(body, sig), {
     wm_status_code: 500,
-    wm_failure: "Error: Second enqueue failed",
+    wm_failure: "Error: Second notification failed",
   });
-  assert.equal(enqueue.mock.callCount(), 2);
+  assert.equal(notify.mock.callCount(), 2);
 });
 
 test("long Unicode posts retain all text and fit Telegram's limit; media-only posts retain their link", async (t) => {
   signingResource(t);
   const delivered: { title: string; description: string }[] = [];
-  t.mock.method(wmill, "runFlowAsync", async (_path, args) => {
+  t.mock.method(wmill, "runFlow", async (_path, args) => {
     delivered.push(args.message);
-    return `job-${delivered.length}`;
+    return { message_id: delivered.length };
   });
   for (const text of ["警报🚨\n".repeat(1300), ""]) {
     delivered.length = 0;

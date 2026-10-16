@@ -1,6 +1,6 @@
 # X Webhook → Telegram
 
-X Activity 的 `post.create` 请求经 Windmill 验签后，直接提交现有
+X Activity 的 `post.create` 请求经 Windmill 验签后，直接调用现有
 `u/oneke/channels/notification` Flow。消息固定为 `info`，发送到已有 Telegram
 Bot 和群，不进入 FlashDuty。没有事件识别、去重、补采或自动重试。
 
@@ -11,8 +11,8 @@ Bot 和群，不进入 FlashDuty。没有事件识别、去重、补采或自动
 - 两条路由的 `route_path` 均为 `x/events`，并启用 workspace 命名空间。
 - 两个脚本均开启 `has_preprocessor`；POST 路由开启 `raw_string`，签名针对原始
   请求体计算，不能重新序列化 JSON。
-- 路由使用 `sync`，脚本等待 `runFlowAsync` 返回通知 Job ID 后才响应成功。
-  Telegram 在独立 Flow Job 中发送，回调不等待投递完成。
+- 路由使用 `sync`，脚本通过 `runFlow` 调用通知 Flow。所有分段使用 `Promise.all`
+  并行执行，全部完成后才响应成功，返回 `{ results: [...] }`。
 
 在 Windmill 创建 Secret Variable `u/oneke/variables/x_client_secret`，填入 X App
 的 **OAuth 2.0 Client Secret**。`u/oneke/resources/x-webhook` Resource 引用它。
@@ -58,11 +58,12 @@ CRC 参数缺失或 Resource 读取失败时直接抛错，X 因收不到有效 
 POST 处理失败时返回 `wm_status_code: 500` 和字符串 `wm_failure`：前者使 X 收到投递
 失败，后者让 Windmill 将 Job 记录为失败。同步路由默认会把抛错结果用 HTTP 200
 返回，因此不能仅依靠异常传播。无效签名不会提交任何通知；不做静默降级。
-X 请求必须在其 10 秒回调时限内完成入队，仍需在部署后的实例验证排队延迟。
+X 请求必须在其 10 秒回调时限内完成通知投递，仍需在部署后的实例验证完整链路延迟。
 
-回调成功表示通知 Job 已入队，不表示 Telegram 已送达。Telegram 投递失败会留下
-Windmill 失败 Flow Job，可在后台重跑。X 重投、分段入队部分成功后失败、或手动重跑，
-都可能产生重复消息。
+回调成功表示所有通知 Flow 均已完成。任一 Flow 拒绝时，`Promise.all` 立即失败并返回
+HTTP 500，其他已启动的 Flow 不会被取消；Telegram 投递失败会留下 Windmill 失败
+Flow Job，可在后台重跑。分段并行发送不保证 Telegram 中的显示顺序；X 重投、部分
+投递成功后失败、或手动重跑，都可能产生重复消息。
 
 本地验证：
 
@@ -72,7 +73,7 @@ npm test
 npm run check
 ```
 
-测试替换 Windmill Resource 读取和 Job 入队，不会访问 X 或向真实 Telegram 群发消息。
+测试替换 Windmill Resource 读取和 Flow 执行，不会访问 X 或向真实 Telegram 群发消息。
 
 接口依据：[X Webhook 验证与签名](https://docs.x.com/x-api/webhooks/quickstart)、
 [X Activity 消息格式](https://docs.x.com/x-api/activity/event-payloads)。
