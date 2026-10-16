@@ -42,6 +42,19 @@ App-only Bearer Token；它只用于设置，不需要保存在本项目的接�
    ```
 
 `tag` 必须填写对应的 `@username`，用于 Telegram 消息标题。不额外查询作者资料。
+
+批量添加账号可在本地运行普通 Shell 脚本（需要 `bash`、`curl`、`jq`）：
+
+```bash
+export X_BEARER_TOKEN='<X App app-only Bearer Token>'
+./scripts/x-subscribe.sh '<Webhook ID>' \
+  PeckShieldAlert CyversAlerts TenArmorAlert CertiKAlert
+```
+
+`scripts/x-subscribe.sh` 接受带或不带 `@` 的用户名，逐个查询 user ID 并创建
+`post.create` 订阅，将 `@username` 写入 tag。它不会注册新 Webhook，也不读取
+Windmill 凭证。任何请求失败即退出；此前已创建的订阅保留，不自动重试或跳过重复项。
+
 首批账号：`PeckShieldAlert`、`CyversAlerts`、`CertiKAlert`、`SlowMist_Team`、
 `Phalcon_xyz`、`TenArmorAlert`、`blockaid_`、`realScamSniffer`、`DefimonAlerts`。
 
@@ -76,5 +89,6 @@ npm run check
 测试替换 Windmill Resource 读取和 Flow 执行，不会访问 X 或向真实 Telegram 群发消息。
 
 接口依据：[X Webhook 验证与签名](https://docs.x.com/x-api/webhooks/quickstart)、
-[X Activity 消息格式](https://docs.x.com/x-api/activity/event-payloads)。
+[X Activity 消息格式](https://docs.x.com/x-api/activity/event-payloads)、
+[X Activity 订阅设置](https://docs.x.com/x-api/activity/quickstart)。
 HTTP 失败契约见 [Windmill 同步响应与 wm_failure](https://www.windmill.dev/docs/core_concepts/webhooks#asynchronous-vs-synchronous)。
