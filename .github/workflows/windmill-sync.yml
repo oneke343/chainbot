@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           plan="${RUNNER_TEMP}/windmill-push-plan.json"
-          wmill \
+          if ! wmill \
             --base-url "${WMILL_BASE_URL}" \
             --token "${WMILL_TOKEN}" \
             --workspace "${WMILL_WORKSPACE}" \
@@ -86,7 +86,10 @@ jobs:
             --auto-metadata \
             --skip-secrets \
             --skip-branch-validation \
-            --json-output > "${plan}"
+            --json-output > "${plan}"; then
+            cat "${plan}"
+            exit 1
+          fi
           jq . "${plan}"
           deletions="$(jq '[.changes[]? | select(.type == "deleted")] | length' "${plan}")"
           if [ "${deletions}" -gt 0 ] && [ "${ALLOW_DELETIONS}" != "true" ]; then
