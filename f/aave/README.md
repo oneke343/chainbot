@@ -115,9 +115,9 @@ config:
       utilizationBufferBps: 100
 ```
 
-同一 Reserve 的触发项合并成一条通知，包含前后值、单位、实际比较时间和阈值。
-通知通过共享 `f/handlebars/render` 直接遍历 findings，展示 metric、方向、前后值、变化和 bps 阈值，
-不额外转换成逐指标展示对象。比率保留 1=100% 的原始口径，通知附带单位说明。
+同一 Reserve 的触发项合并成一条通知，使用 reserveKey 标识链、市场和资产。
+`renderNotifications(findings)` 通过共享 `f/handlebars/render` 直接遍历 findings，
+展示 metric、方向、前后值、变化和 bps 阈值。比率保留 1=100% 的原始口径，通知附带单位说明。
 Cap 使用率用各自资产单位的总量除以 Cap，不等同于链上交易容量的精确预检。
 流动性增加和 Cap 为 info，其余为 warning，经现有渠道发送 Telegram。
 持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。

@@ -6,7 +6,7 @@ locks:
   f/aave/lib/v3-types: f10b36dc82b6d7a480b515064a2a69b83898be64daa0af66ca2a67b9c7ef1a67
   f/aave/lib/v4-types: 167fe4636969b371e595278d5bcd9020ce581033b6423a6b349886956b074bcf
   f/aave/rules/aave_v3_hf: 7ab2f65150247f7010169d4c556982edc91ca845f29e84a6ce751a456225afb3
-  f/aave/rules/aave_v3_market_risk: 3569c6662f9f01eefb993a40baa87ca85a7ee2baca98b3fd491d99611fe55620
+  f/aave/rules/aave_v3_market_risk: 5558984b1eb2b15548efb09e012f63e6f0f922a4a21c6451487fbdbf7296b005
   f/aave/rules/aave_v4_hf: ac8307cfbfe697c05b3a63069d851c493e95e8c9d22fc354504e334dad153e22
   f/aave/sources/v3/chains: f8f4bd9836e8adb534848493a333e4b751e80e48bcdadd23297ca3824b2f13c0
   f/aave/sources/v3/market_metrics: 0c8b4bb4ac045d561849d1d63c240a4fc22a7d93e05c431e4f875383e05a4fe0
@@ -46,7 +46,7 @@ locks:
   u/oneke/channels/notification__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
   u/oneke/monitors/aave_v3_configuration_change: 9ad2490f3d35ee82b2e6f708b3651f1e74731218eb583d711c610bab8959b08f
   u/oneke/monitors/aave_v3_hf_alert: c6851baf46b261f7e49cb75a0dcef00eb35caaf00a9b123804ceb5683dcfdbda
-  u/oneke/monitors/aave_v3_market_risk: 0b0f8ed32eaea99909f5b891990079e82df4e8c4e41c82288d9c660040a29f5d
+  u/oneke/monitors/aave_v3_market_risk: 4af1980de8790b38d2c90db3f73c6228a3ccadda2568eeaff1933721939ab38c
   u/oneke/monitors/aave_v4_configuration_change: 7e0f0fc7a3b0e80e849ac5bdfe192cf3839eac2293356e030d8bf330cf217f2d
   u/oneke/monitors/aave_v4_hf_alert: 7072d143dfabb954742c054efdb39a4900b21c7f9aae6c909f689dd7df02af42
   u/oneke/monitors/binance_vip_hf_alert: cda0ea33745a03410ad22b6e5a4ae467ae751eed79f1b96a6deb38437bf0192c
