@@ -136,7 +136,7 @@ test("Source discovers chains then dispatches one configuration query for all ma
     "0",
   );
   assert.equal(
-    snapshot["1"][pool].reserves[asset].isolationModeConfig!.debtCeilingUsd,
+    snapshot["1"][pool].reserves[asset].isolationModeConfig!.debtCeiling,
     "123.45",
   );
   assert.deepEqual(ctx._flushPending(), []);
@@ -303,18 +303,15 @@ test("debt ceiling compares USD cents, ignoring price-derived token amounts", as
   const after = await collect([initial]);
   assert.deepEqual(jsondiff(before, after), []);
   assert.equal(
-    after["1"][pool].reserves[asset].isolationModeConfig!.debtCeilingUsd,
+    after["1"][pool].reserves[asset].isolationModeConfig!.debtCeiling,
     "1000000",
-  );
-  assert.ok(
-    !("debtCeiling" in after["1"][pool].reserves[asset].isolationModeConfig!),
   );
 
   initial.reserves[0].isolationModeConfig!.debtCeiling.usd = "1000000.01";
   assert.deepEqual(jsondiff(after, await collect([initial])), [
     {
       op: "replace",
-      path: `/1/${pool}/reserves/${asset}/isolationModeConfig/debtCeilingUsd`,
+      path: `/1/${pool}/reserves/${asset}/isolationModeConfig/debtCeiling`,
       oldValue: "1000000",
       value: "1000000.01",
     },
@@ -332,7 +329,7 @@ test("debt ceiling normalization preserves large values and cents without floati
     initial.reserves[0].isolationModeConfig!.debtCeiling.usd = usd;
     const snapshot = await collect([initial]);
     assert.equal(
-      snapshot["1"][pool].reserves[asset].isolationModeConfig!.debtCeilingUsd,
+      snapshot["1"][pool].reserves[asset].isolationModeConfig!.debtCeiling,
       expected,
     );
   }

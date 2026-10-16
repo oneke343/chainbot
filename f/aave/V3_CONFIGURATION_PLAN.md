@@ -73,7 +73,7 @@ V4 的数据源为 GraphQL 发现 Hub 后通过 RPC Reader 采集。V3 本期只
 | Reserve 关联地址 | `usdOracleAddress`、`interestRateStrategyAddress` |
 | `supplyInfo` | `maxLTV`、`liquidationThreshold`、`liquidationBonus`、`canBeCollateral`、`supplyCap` |
 | `borrowInfo` | `reserveFactor`、`borrowCap`、`borrowingState`、`baseVariableBorrowRate`、`variableRateSlope1`、`variableRateSlope2`、`optimalUsageRate` |
-| `isolationModeConfig` | 旧版兼容的 `canBeCollateral`、`canBeBorrowed`、`debtCeilingDecimals`；`debtCeilingUsd` 读取 `debtCeiling.usd` 并以整数分归一化，保留可空语义；不读取 token 换算数量及 `totalBorrows` |
+| `isolationModeConfig` | 旧版兼容的 `canBeCollateral`、`canBeBorrowed`、`debtCeilingDecimals`；`debtCeiling` 读取 `debtCeiling.usd` 并以整数分归一化，保留可空语义；不读取 token 换算数量及 `totalBorrows` |
 | eMode category | category ID 作为索引；`label`、`maxLTV`、`liquidationThreshold`、`liquidationPenalty`、`isolated` |
 | category 资产关系 | underlying 地址作为索引；`canBeCollateral`、`canBeBorrowed`、`hasLtvZero` |
 
@@ -154,7 +154,7 @@ Windmill 原生 GraphQL runner 对 errors 与 data 并存响应的线上行为�
 
 ## 7. 通知与调度
 
-沿用 `level: "info"`，标题建议 `Aave v3 configuration snapshot changed`。描述使用现有 `renderJsonDiff`，开头或结尾补一句“比例 1=100%；debtCeilingUsd 单位为 USD，其余金额单位为 token；变化来自 API 两次采样”。
+沿用 `level: "info"`，标题建议 `Aave v3 configuration snapshot changed`。描述使用现有 `renderJsonDiff`，开头或结尾补一句“比例 1=100%；debtCeiling 单位为 USD，其余金额单位为 token；变化来自 API 两次采样”。
 
 已有渲染器默认最多显示 20 项、2800 字符，完整 Patch 留在 diff 子任务结果中；不为 V3 另建发送器或风险分级。现有 notification Flow 会将 info 发往 Telegram，error 另发 FlashDuty，本文不执行任何通知。
 

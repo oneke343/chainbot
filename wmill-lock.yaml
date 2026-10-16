@@ -11,7 +11,7 @@ locks:
   f/aave/sources/v3/chains: f8f4bd9836e8adb534848493a333e4b751e80e48bcdadd23297ca3824b2f13c0
   f/aave/sources/v3/market_metrics: 05b5569197a2227f873951c660f82c70456e6b97860b193b0bcb30df530e9e3b
   f/aave/sources/v3/market_metrics_query: 49335e6a1255a00c8b242538c24afeff87462895a5775509a7b2b2ecfc5d80d8
-  f/aave/sources/v3/market_params: 74cfd12895f91996240e429128cda3cf522f0262095efc2f03271e621a9f4926
+  f/aave/sources/v3/market_params: 1b9f7df54d15dd120f8946690ef5cf1f01bab4c24fd97ba21bf16b399eb75337
   f/aave/sources/v3/market_params_query: caa8e69833a807ada6dd9fb84f4f41ff8d74aa56bb9ec63f4530435f5318af0b
   f/aave/sources/v3/types: 201120e3c5aa830ebd2778e0cec8cd441db3edb14658e7f4cbd23ec522267530
   f/aave/sources/v3/user_positions: e94731f8bf95d9201361d74e2883b43c1d9991fb8ad6e285a00ec4d526704c87
@@ -44,7 +44,7 @@ locks:
   f/okx/sources/loan_positions: f4f0e1c65f9c070e790538ca3868e4ab485f8dc3f7818d4c64ed6c27f7becf2b
   f/wmm/wm_job_history: d132839493ea8c51694bcc9625f75aaf351cfdac095d9ce2bb131cd76e7e508f
   u/oneke/channels/notification__flow+__flow_hash: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
-  u/oneke/monitors/aave_v3_configuration_change: 9161c9ce6fcce22f43e8a62c4e9a4a765616db102699e34695a5ddab6f848753
+  u/oneke/monitors/aave_v3_configuration_change: e4fc7e8e854d7603158e9cc1408e767197dc763874f9ca91715a002a2aaeaacf
   u/oneke/monitors/aave_v3_hf_alert: c6851baf46b261f7e49cb75a0dcef00eb35caaf00a9b123804ceb5683dcfdbda
   u/oneke/monitors/aave_v3_market_risk: 31dc6a894666866f0033c192477d0a586aaac989797a3dd4872330bbf1219e03
   u/oneke/monitors/aave_v4_configuration_change: 7e0f0fc7a3b0e80e849ac5bdfe192cf3839eac2293356e030d8bf330cf217f2d

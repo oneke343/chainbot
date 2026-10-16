@@ -60,7 +60,7 @@ function reserveConfiguration(reserve: Reserve) {
         : {
             canBeCollateral: isolationModeConfig.canBeCollateral,
             canBeBorrowed: isolationModeConfig.canBeBorrowed,
-            debtCeilingUsd: formatUnits(
+            debtCeiling: formatUnits(
               parseUnits(isolationModeConfig.debtCeiling.usd, 2),
               2,
             ),

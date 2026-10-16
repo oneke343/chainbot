@@ -48,7 +48,7 @@ test("Monitor reads Source history before sampling, compares snapshots and check
       level: "info",
       title: "Aave v3 configuration snapshot changed",
       description:
-        '检测到 1 项变化：修改 1，新增 0，删除 0\n\n/1/pool\n  修改 supplyCap："100" → "200"\n\n比例 1=100%；debtCeilingUsd 单位为 USD，其余金额单位为 token；变化来自 API 两次采样。',
+        '检测到 1 项变化：修改 1，新增 0，删除 0\n\n/1/pool\n  修改 supplyCap："100" → "200"\n\n比例 1=100%；debtCeiling 单位为 USD，其余金额单位为 token；变化来自 API 两次采样。',
     },
   });
   completed_steps[notification.key] = { delivered: true };
@@ -79,14 +79,14 @@ test("a real USD debt ceiling change is notified with explicit currency", async 
       pool: {
         reserves: {
           metis: {
-            isolationModeConfig: { debtCeilingUsd: "1000000" },
+            isolationModeConfig: { debtCeiling: "1000000" },
           },
         },
       },
     },
   };
   const current = structuredClone(before);
-  current["1088"].pool.reserves.metis.isolationModeConfig.debtCeilingUsd =
+  current["1088"].pool.reserves.metis.isolationModeConfig.debtCeiling =
     "1000000.01";
   const completed_steps: Record<string, unknown> = {
     previous: { result: before },
@@ -99,12 +99,9 @@ test("a real USD debt ceiling change is notified with explicit currency", async 
   assert.equal(notification.script, "u/oneke/channels/notification");
   assert.match(
     notification.args.message.description,
-    /修改 debtCeilingUsd："1000000" → "1000000\.01"/,
+    /修改 debtCeiling："1000000" → "1000000\.01"/,
   );
-  assert.match(
-    notification.args.message.description,
-    /debtCeilingUsd 单位为 USD/,
-  );
+  assert.match(notification.args.message.description, /debtCeiling 单位为 USD/);
   completed_steps[notification.key] = { delivered: true };
   wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
   assert.equal(await monitor(), undefined);

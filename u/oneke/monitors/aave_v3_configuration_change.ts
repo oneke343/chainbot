@@ -30,7 +30,7 @@ export const main = workflow(async () => {
     message: {
       level: "info",
       title: "Aave v3 configuration snapshot changed",
-      description: `${renderJsonDiff(patch)}\n\n比例 1=100%；debtCeilingUsd 单位为 USD，其余金额单位为 token；变化来自 API 两次采样。`,
+      description: `${renderJsonDiff(patch)}\n\n比例 1=100%；debtCeiling 单位为 USD，其余金额单位为 token；变化来自 API 两次采样。`,
     },
   });
 });
