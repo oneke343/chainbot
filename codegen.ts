@@ -14,6 +14,7 @@ const config: CodegenConfig = {
             document.includes(`/sources/${version}/`)
           ),
           plugins: ["typescript-operations"],
+          config: { inlineCommonTypes: true },
         },
       ]),
     ),
