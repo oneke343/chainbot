@@ -321,14 +321,8 @@ export async function renderNotifications(
   );
 }
 
-const NOTIFICATION_TEMPLATE = `{{#with findings.[0]}}
-市场：{{marketName}}
-资产：{{assetName}}
-{{/with}}
-
+const NOTIFICATION_TEMPLATE = `
 {{#each findings}}
-- {{metric}} ({{direction}})：{{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}；阈值 {{thresholdBps}} bps。
+- {{metric}} ({{direction}}): {{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}; 阈值 {{thresholdBps}} bps。
 {{/each}}
-
-余额单位为底层 token；比率 1=100%，APY 差值 0.02=2 个百分点；100 bps=1% 或 1 个百分点，利用率阈值为拐点之上的缓冲值。
-变化来自 API 采样；供借量为余额变化。`;
+`;
