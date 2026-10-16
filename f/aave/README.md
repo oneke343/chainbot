@@ -80,7 +80,7 @@ Schedule 每三分钟第 12 秒执行、禁止重叠，已启用（`enabled: tru
 `f/chain_sentinel/sources/history` 读取最近 30 分钟成功 Source job。
 通用历史入口按 job 开始时间过滤；Rule 按快照采样时间排序并排除当前及未来采样。
 基准选取当前时间减 15 分钟时点或之前最近的一条，最多提前 3 分钟，
-实际比较间隔为 15～18 分钟。没有符合条件的基准时，仅判断当前 Cap。
+实际比较间隔为 15～18 分钟。没有符合条件的基准时，本轮不产生风险告警。
 
 默认阈值均使用 bps（100 bps = 1% 或 1 个百分点），比较包含阈值本身：
 
@@ -91,13 +91,12 @@ Schedule 每三分钟第 12 秒执行、禁止重叠，已启用（`enabled: tru
 | `borrowApyRiseBps` | 200 | 借款 APY 上涨至少 2 个百分点，无当前 APY 上限 |
 | `supplyDropBps` | 1000 | 总供给减少至少 10%，无金额过滤 |
 | `borrowGrowthBps` | 1000 | 总借款增加至少 10%，无金额过滤 |
-| `capUsageBps` | 9500 | Supply 或 Borrow Cap 当前使用率至少 95% |
 
 利用率判断要求基准到当前的相邻采样间隔均不超过 6 分钟，且每个采样都有该 Reserve
 及借款信息；中间任一采样跌回触发线以下即不满足。它只证明已采集点的条件，
 不能证明采样间隔内完全没有回落。端点变化规则仍可在中间有采样缺口时判断。
-基准余额为零时跳过对应百分比变化；Cap 为零表示无限制，跳过使用率判断。
-`borrow: null` 的 Reserve 仍判断供给减少和 Supply Cap。
+基准余额为零时跳过对应百分比变化。
+`borrow: null` 的 Reserve 仍判断供给减少。
 
 Monitor 接收 `config`，由 `defaults` 和按 Reserve key 索引的 `overrides` 组成：
 
@@ -109,7 +108,6 @@ config:
     borrowApyRiseBps: 200
     supplyDropBps: 1000
     borrowGrowthBps: 1000
-    capUsageBps: 9500
   overrides:
     "1/0x市场地址/0x资产地址":
       utilizationBufferBps: 100
@@ -119,8 +117,9 @@ config:
 标题和描述展示市场与资产名称，reserveKey 用于内部区分和分组。
 `renderNotifications(findings)` 通过共享 `f/handlebars/render` 直接遍历 findings，
 展示 metric、方向、前后值、变化和 bps 阈值。比率保留 1=100% 的原始口径，通知附带单位说明。
-Cap 使用率用各自资产单位的总量除以 Cap，不等同于链上交易容量的精确预检。
-流动性增加和 Cap 为 info，其余为 warning，经现有渠道发送 Telegram。
+Source 保留 Supply / Borrow Cap 数据供容量查看，动态风险 Monitor 不根据 Cap 使用率告警；
+Cap 参数变化继续由 `aave_v3_configuration_change` 通知。
+流动性增加为 info，其余为 warning，经现有渠道发送 Telegram。
 持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。
 Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，已启用（`enabled: true`）。
 调度启用状态在推送 `main` 后由 GitHub Actions 同步到 Windmill。

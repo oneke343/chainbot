@@ -8,7 +8,7 @@ Source 采集事实，Rule 判断阈值并生成消息，用户目录中的 Moni
 | Monitor | 功能 |
 | --- | --- |
 | `u/oneke/monitors/aave_v3_hf_alert` | Aave V3 用户仓位 HF |
-| `u/oneke/monitors/aave_v3_market_risk` | Aave V3 Reserve 流动性、利用率、APY、供借量和 Cap |
+| `u/oneke/monitors/aave_v3_market_risk` | Aave V3 Reserve 流动性、利用率、APY 和供借量 |
 | `u/oneke/monitors/aave_v4_hf_alert` | Aave V4 用户 Spoke 账户 HF |
 | `u/oneke/monitors/morpho_hf_alert` | Morpho 借款仓位 HF |
 | `u/oneke/monitors/binance_vip_hf_alert` | Binance VIP Loan HF，按 collateralAccountId 配置阈值 |

@@ -16,7 +16,6 @@ schema:
           borrowApyRiseBps: 200
           supplyDropBps: 1000
           borrowGrowthBps: 1000
-          capUsageBps: 9500
         overrides: {}
       properties:
         defaults:
@@ -37,16 +36,12 @@ schema:
             borrowGrowthBps:
               type: integer
               description: Borrow increase; 1000 = 10%. No amount floor.
-            capUsageBps:
-              type: integer
-              description: Supply and borrow cap usage; 9500 = 95%.
           required:
             - liquidityChangeBps
             - utilizationBufferBps
             - borrowApyRiseBps
             - supplyDropBps
             - borrowGrowthBps
-            - capUsageBps
         overrides:
           type: object
           description: Overrides keyed by chainId/lowercase-market/lowercase-asset.

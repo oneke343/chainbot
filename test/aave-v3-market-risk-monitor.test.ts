@@ -84,17 +84,22 @@ test("Monitor makes no notification when no rules trigger", async (t) => {
 
 test("Monitor propagates collection, history, evaluation and notification failures", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
-  const current = snapshot(15);
-  current.reserves[Object.keys(current.reserves)[0]].supplyCap = decimal(1000);
-  const findings = await evaluate(current, []);
+  const metrics = reserve();
+  metrics.borrow!.availableLiquidity = decimal(400);
+  const current = snapshot(15, metrics);
+  const history = [{ result: snapshot(0) }];
+  const findings = await evaluate(
+    current,
+    history.map((job) => job.result),
+  );
   const fail = { __wmill_error: true, message: "Task failed" };
   for (const completed_steps of [
     { aave_v3_market_metrics: fail },
     { aave_v3_market_metrics: current, history: fail },
-    { aave_v3_market_metrics: current, history: [], aave_v3_market_risk: fail },
+    { aave_v3_market_metrics: current, history, aave_v3_market_risk: fail },
     {
       aave_v3_market_metrics: current,
-      history: [],
+      history,
       aave_v3_market_risk: findings,
       notification: fail,
     },

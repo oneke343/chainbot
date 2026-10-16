@@ -9,7 +9,6 @@ import {
   evaluateLiquidity,
   evaluateBorrowApy,
   evaluateBalances,
-  evaluateCaps,
   type Finding,
 } from "../f/aave/rules/aave_v3_market_risk.ts";
 import {
@@ -87,19 +86,26 @@ test("APY compares percentage points, only fast rises and not a high current rat
   assert.deepEqual(evaluateBorrowApy(before, current, DEFAULT_THRESHOLDS), []);
 });
 
-test("Cap has one inclusive threshold, permits usage above 100%, and skips unlimited caps", () => {
+test("near-full and exceeded caps do not alert; balance changes still do", async () => {
   const current = reserve();
-  current.supplyCap = decimal(1000);
-  current.totalSupply = decimal(950);
+  for (const [supplyCap, borrowCap] of [
+    [1050, 525],
+    [1000, 500],
+    [900, 400],
+    [0, 0],
+  ]) {
+    current.supplyCap = decimal(supplyCap);
+    current.borrow!.borrowCap = decimal(borrowCap);
+    assert.deepEqual(await main(snapshot(15, current), history()), []);
+    assert.deepEqual(await main(snapshot(15, current), []), []);
+  }
+  current.supplyCap = decimal(900);
   current.borrow!.borrowCap = decimal(400);
-  const hits = evaluateCaps(current, DEFAULT_THRESHOLDS);
+  current.borrow!.totalBorrow = decimal(550);
   assert.deepEqual(
-    hits.map((hit) => hit.current),
-    ["0.95", "1.25"],
+    (await main(snapshot(15, current), history())).map((hit) => hit.metric),
+    ["borrow_total"],
   );
-  current.totalSupply = decimal(949);
-  current.borrow!.borrowCap = decimal(0);
-  assert.deepEqual(evaluateCaps(current, DEFAULT_THRESHOLDS), []);
 });
 
 test("window chooses a timestamp at or before the target, excludes current/future and sorts history", () => {
@@ -183,14 +189,11 @@ test("endpoints still evaluate across a gap but utilization does not", async () 
   );
 });
 
-test("first sample evaluates Cap; supply-only reserves and zero baselines remain meaningful", async () => {
+test("first sample is quiet; supply-only reserves and zero baselines remain meaningful", async () => {
   const supplyOnly = reserve();
   supplyOnly.borrow = null;
   supplyOnly.supplyCap = decimal(1000);
-  assert.deepEqual(
-    (await main(snapshot(15, supplyOnly), [])).map((hit) => hit.metric),
-    ["supply_cap_usage"],
-  );
+  assert.deepEqual(await main(snapshot(15, supplyOnly), []), []);
   const before = reserve();
   before.totalSupply = decimal(0);
   before.borrow!.totalBorrow = decimal(0);
@@ -229,7 +232,6 @@ test("notifications consume only findings and preserve values, units and severit
   const current = reserve();
   current.borrow!.availableLiquidity = decimal(400);
   current.borrow!.apy = rate(700);
-  current.supplyCap = decimal(1000);
   const now = snapshot(17, current);
   const old = [snapshot(0, before)];
   const hits = await main(now, old);
@@ -247,13 +249,7 @@ test("notifications consume only findings and preserve values, units and severit
     messages[0].description,
     /borrow_apy \(increase\)：0\.05 → 0\.07；变化 0\.02；阈值 200 bps/,
   );
-  assert.match(
-    messages[0].description,
-    /supply_cap_usage \(above\)：1；阈值 9500 bps/,
-  );
   assert.match(messages[0].description, /余额单位为底层 token；比率 1=100%/);
-  const capOnly = await renderNotifications(await main(now, []));
-  assert.equal(capOnly[0].level, "info");
   const increased = reserve();
   increased.borrow!.availableLiquidity = decimal(600);
   assert.equal(
@@ -269,22 +265,6 @@ test("notifications consume only findings and preserve values, units and severit
 test("Handlebars renders standalone findings and groups reserves without changing their contents", async () => {
   const names = { marketName: "Core <risk>", assetName: "USD Coin & token" };
   const findings: Finding[] = [
-    {
-      ...names,
-      reserveKey: key,
-      metric: "supply_cap_usage",
-      direction: "above",
-      current: "1",
-      thresholdBps: 9500,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "borrow_cap_usage",
-      direction: "above",
-      current: "1",
-      thresholdBps: 9500,
-    },
     {
       ...names,
       reserveKey: key,
@@ -336,10 +316,12 @@ test("Handlebars renders standalone findings and groups reserves without changin
     {
       ...names,
       reserveKey: "8453/<pool>&/asset",
-      metric: "supply_cap_usage",
-      direction: "above",
-      current: "0.95",
-      thresholdBps: 9500,
+      metric: "liquidity",
+      direction: "increase",
+      before: "500",
+      current: "600",
+      change: "0.2",
+      thresholdBps: 2000,
     },
   ];
   const before = structuredClone(findings);
@@ -354,15 +336,16 @@ test("Handlebars renders standalone findings and groups reserves without changin
   assert.equal(other.level, "info");
   assert.match(other.description, /市场：Core <risk>\n资产：USD Coin & token/);
   assert.ok(!other.description.includes("8453/<pool>&/asset"));
-  assert.doesNotMatch(other.description, /liquidity/);
+  assert.doesNotMatch(
+    other.description,
+    /borrow_apy|supply_total|borrow_total|utilization/,
+  );
   assert.equal(
     message.description.split("\n").filter((line) => line.startsWith("- "))
       .length,
-    7,
+    5,
   );
   for (const line of [
-    "- supply_cap_usage (above)：1；阈值 9500 bps。",
-    "- borrow_cap_usage (above)：1；阈值 9500 bps。",
     "- liquidity (decrease)：500 → 400；变化 -0.2；阈值 2000 bps。",
     "- borrow_apy (increase)：0.05 → 0.07；变化 0.02；阈值 200 bps。",
     "- supply_total (decrease)：1000 → 900；变化 -0.1；阈值 1000 bps。",
@@ -371,7 +354,7 @@ test("Handlebars renders standalone findings and groups reserves without changin
   ])
     assert.ok(message.description.includes(line), line);
   assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);
-  assert.match(message.description, /\n\n- supply_cap_usage/);
+  assert.match(message.description, /\n\n- liquidity/);
   assert.deepEqual(findings, before);
   assert.deepEqual(await renderNotifications([]), []);
 });

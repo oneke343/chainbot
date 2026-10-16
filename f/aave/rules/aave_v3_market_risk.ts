@@ -13,7 +13,6 @@ export interface RiskThresholds {
   borrowApyRiseBps: number;
   supplyDropBps: number;
   borrowGrowthBps: number;
-  capUsageBps: number;
 }
 
 export interface RiskConfig {
@@ -27,7 +26,6 @@ export const DEFAULT_THRESHOLDS: RiskThresholds = {
   borrowApyRiseBps: 200,
   supplyDropBps: 1000,
   borrowGrowthBps: 1000,
-  capUsageBps: 9500,
 };
 
 export const DEFAULT_CONFIG: RiskConfig = {
@@ -43,9 +41,7 @@ export type Metric =
   | "utilization"
   | "borrow_apy"
   | "supply_total"
-  | "borrow_total"
-  | "supply_cap_usage"
-  | "borrow_cap_usage";
+  | "borrow_total";
 
 interface MetricFinding {
   metric: Metric;
@@ -253,34 +249,6 @@ export function evaluateBalances(
   return findings;
 }
 
-export function evaluateCaps(
-  current: ReserveMetrics,
-  thresholds: RiskThresholds,
-): MetricFinding[] {
-  const caps: [Metric, Decimal, Decimal][] = [
-    ["supply_cap_usage", current.totalSupply, current.supplyCap],
-  ];
-  if (current.borrow !== null)
-    caps.push([
-      "borrow_cap_usage",
-      current.borrow.totalBorrow,
-      current.borrow.borrowCap,
-    ]);
-  return caps.flatMap(([metric, total, cap]): MetricFinding[] => {
-    const [used, limit] = aligned(total, cap);
-    if (limit === 0n || used * 10000n < limit * BigInt(thresholds.capUsageBps))
-      return [];
-    return [
-      {
-        metric,
-        direction: "above",
-        current: ratio(used, limit),
-        thresholdBps: thresholds.capUsageBps,
-      },
-    ];
-  });
-}
-
 export async function main(
   current: ReserveSnapshot,
   history: ReserveSnapshot[],
@@ -290,7 +258,7 @@ export async function main(
   const findings: Finding[] = [];
   for (const [key, reserve] of Object.entries(current.reserves)) {
     const thresholds = { ...config.defaults, ...config.overrides[key] };
-    const hits = evaluateCaps(reserve, thresholds);
+    const hits: MetricFinding[] = [];
     const before = window.baseline?.reserves[key];
     if (before !== undefined) {
       hits.push(
@@ -337,9 +305,7 @@ export async function renderNotifications(
   return Promise.all(
     Array.from(groups.values(), async (hits) => {
       const warning = hits.some(
-        (hit) =>
-          !hit.metric.endsWith("cap_usage") &&
-          !(hit.metric === "liquidity" && hit.direction === "increase"),
+        (hit) => hit.metric !== "liquidity" || hit.direction !== "increase",
       );
       return {
         level: warning ? "warning" : "info",
