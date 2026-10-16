@@ -1,5 +1,5 @@
 summary: Forward X post webhooks to Telegram
-description: Verify the original request body and enqueue the existing notification flow. Errors propagate.
+description: Verify the original request body and enqueue the existing notification flow. Failures return HTTP 500 and mark the Job failed.
 lock: '!inline u/oneke/sources/x_to_telegram.script.lock'
 kind: script
 has_preprocessor: true
