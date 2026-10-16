@@ -42,10 +42,10 @@ export type Metric =
 interface MetricFinding {
   metric: Metric;
   direction: "increase" | "decrease";
-  before?: string;
+  before: string;
   current: string;
   // Signed relative change for balances; signed rate difference for APY (1 = 100%).
-  change?: string;
+  change: string;
   thresholdBps: number;
 }
 
@@ -247,6 +247,50 @@ export interface Notification {
   description: string;
 }
 
+function formatValue(value: string, unit: "amount" | "percent" | "pp"): string {
+  const number = Number(value) * (unit === "amount" ? 1 : 100);
+  const maximumFractionDigits = unit === "amount" ? 4 : 2;
+  const text =
+    number !== 0 && Math.abs(number) < 10 ** -maximumFractionDigits
+      ? number.toExponential(2)
+      : new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(
+          number,
+        );
+  const suffix = unit === "amount" ? "" : unit === "percent" ? "%" : " pp";
+  return text + suffix;
+}
+
+function formatFinding(finding: Finding) {
+  return {
+    ...finding,
+    metrics: finding.metrics.map((metric) => {
+      const unit = metric.metric === "borrow_apy" ? "percent" : "amount";
+      return {
+        ...metric,
+        before: formatValue(metric.before, unit),
+        current: formatValue(metric.current, unit),
+        change: formatValue(
+          metric.change,
+          metric.metric === "borrow_apy" ? "pp" : "percent",
+        ),
+      };
+    }),
+    currentValues: Object.fromEntries(
+      Object.entries(finding.currentValues).map(([key, value]) => {
+        if (key === "sampled_at" || key === "token") return [key, value];
+        const unit = [
+          "utilization",
+          "optimal_usage_rate",
+          "borrow_apy",
+        ].includes(key)
+          ? "percent"
+          : "amount";
+        return [key, formatValue(value, unit)];
+      }),
+    ),
+  };
+}
+
 export async function renderNotifications(
   findings: Finding[],
 ): Promise<Notification[]> {
@@ -270,7 +314,7 @@ export async function renderNotifications(
           finding: hits[0],
         }),
         description: await render(NOTIFICATION_TEMPLATE, {
-          findings: hits,
+          findings: hits.map(formatFinding),
         }),
       };
     }),
@@ -282,10 +326,10 @@ const NOTIFICATION_TEMPLATE = `
 资产：{{assetName}}
 
 {{#each metrics}}
-- {{metric}} ({{direction}}): {{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}; 阈值 {{thresholdBps}} bps。
+- {{metric}} ({{direction}}): {{before}} → {{current}}；变化 {{change}}; 阈值 {{thresholdBps}} bps。
 {{/each}}
 
-当前指标（金额单位为 token；比率 1=100%）
+当前指标（金额单位为 token；比率以 % 展示）
 {{#each currentValues}}
 {{@key}}: {{this}}
 {{/each}}
