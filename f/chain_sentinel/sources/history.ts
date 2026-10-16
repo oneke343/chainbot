@@ -6,9 +6,11 @@ export async function main(
   started_after: string,
   started_before: string,
 ): Promise<CompletedJob[]> {
-  return await Array.fromAsync(getJobHistory(wmill.getWorkspace(), {
-    path: source_path,
-    startedAfter: started_after,
-    startedBefore: started_before,
-  }));
+  return await Array.fromAsync(
+    getJobHistory(wmill.getWorkspace(), {
+      path: source_path,
+      startedAfter: started_after,
+      startedBefore: started_before,
+    }),
+  );
 }
