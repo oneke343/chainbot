@@ -22,6 +22,9 @@ HF 持续低于阈值时，每次定时运行都会告警。各 Monitor 的 `.sc
 
 ## 配置变更与通知
 
+X 账号帖子可通过 Webhook 直接转发到现有 Telegram 通知渠道。
+接入与凭证配置见 [X Webhook](u/oneke/sources/X_WEBHOOK.md)。
+
 Aave V4 配置 Source 位于 `u/oneke/sources/aave_v4_configuration`。
 Monitor 先读取该 Source 最近成功 job，再采集当前快照；首次采集只建立历史。
 已有历史时，通过 `f/chain_sentinel/rules/diff` 生成包含旧值的 JSON Patch，

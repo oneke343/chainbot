@@ -1,0 +1,14 @@
+summary: Answer X webhook CRC challenges
+description: Read the signing secret server-side and return the X CRC response token.
+lock: '!inline u/oneke/sources/x_crc.script.lock'
+kind: script
+has_preprocessor: true
+timeout: 10
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    crc_token:
+      type: string
+  required:
+    - crc_token

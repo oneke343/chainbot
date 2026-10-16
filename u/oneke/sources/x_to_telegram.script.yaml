@@ -1,0 +1,17 @@
+summary: Forward X post webhooks to Telegram
+description: Verify the original request body and enqueue the existing notification flow. Errors propagate.
+lock: '!inline u/oneke/sources/x_to_telegram.script.lock'
+kind: script
+has_preprocessor: true
+timeout: 10
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    raw_body:
+      type: string
+    signature:
+      type: string
+  required:
+    - raw_body
+    - signature

@@ -1,0 +1,11 @@
+summary: Validate the X webhook callback with CRC
+script_path: u/oneke/sources/x_crc
+is_flow: false
+route_path: x/events
+http_method: get
+request_type: sync
+authentication_method: none
+is_static_website: false
+workspaced_route: true
+wrap_body: false
+raw_string: false
