@@ -1,7 +1,7 @@
 summary: Query Aave V3 reserve metrics
 description: Read balances, liquidity, utilization, borrow APY and caps for all
   selected chains.
-lock: ""
+lock: ''
 kind: script
 schema:
   $schema: https://json-schema.org/draft/2020-12/schema
@@ -12,9 +12,11 @@ schema:
       format: resource-graphql
     chain_ids:
       type: array
+      default: null
       items:
         type: integer
       minItems: 1
+      originalType: record[]
   required:
     - api
     - chain_ids
