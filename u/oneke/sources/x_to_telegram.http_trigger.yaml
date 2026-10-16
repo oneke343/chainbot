@@ -1,4 +1,4 @@
-summary: Verify X post events and enqueue Telegram notifications
+summary: Verify X post events and await Telegram notifications in parallel
 script_path: u/oneke/sources/x_to_telegram
 is_flow: false
 route_path: x/events
