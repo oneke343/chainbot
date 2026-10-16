@@ -31,7 +31,7 @@ test("CRC returns the X protocol token using the server-side client secret", asy
   });
 });
 
-test("a signed X post returns the existing info notification result", async (t) => {
+test("a signed X post sends the existing info notification and returns only ok", async (t) => {
   signingResource(t);
   const notify = t.mock.method(wmill, "runFlow", async (path, args) => {
     assert.equal(path, "u/oneke/channels/notification");
@@ -49,7 +49,7 @@ test("a signed X post returns the existing info notification result", async (t) 
     headers: { "x-twitter-webhooks-signature-oauth2": signature },
   });
   assert.deepEqual(await forward(input.raw_body, input.signature), {
-    results: [{ message_id: 123 }],
+    ok: true,
   });
   assert.equal(notify.mock.callCount(), 1);
 });
@@ -74,7 +74,7 @@ test("notification flows start in parallel and the response waits for every resu
     assert.equal(settled, false);
     gates[0].resolve({ message_id: 1 });
     assert.deepEqual(await response, {
-      results: [{ message_id: 1 }, { message_id: 2 }],
+      ok: true,
     });
   } finally {
     for (const gate of gates) gate.resolve(undefined);

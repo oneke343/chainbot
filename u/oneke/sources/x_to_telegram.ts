@@ -58,7 +58,8 @@ export async function main(raw_body: string, signature: string) {
       }));
     }
 
-    return { results: await Promise.all(notifications) };
+    await Promise.all(notifications);
+    return { ok: true };
   } catch (error) {
     // Sync Windmill routes otherwise acknowledge failed scripts with HTTP 200.
     return { wm_status_code: 500, wm_failure: String(error) };
