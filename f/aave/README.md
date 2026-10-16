@@ -63,7 +63,7 @@ GraphQL 任务失败直接传播，Source 不返回部分快照。
 首次采样不通知；Source 成功即进入历史，后续通知失败不回滚基线。
 需补发时恢复失败 Monitor 的通知 checkpoint，下一轮采样不自动补发旧变化。
 
-Schedule 已提供为每三分钟第 12 秒执行、禁止重叠，默认 `enabled: false`。
+Schedule 每三分钟第 12 秒执行、禁止重叠，已启用（`enabled: true`）。
 纯 GraphQL 仅监控 API 支持的配置采样差异，不代表链上逐笔修改或升级、权限审计。
 完整字段和范围见 [V3 配置监控设计](V3_CONFIGURATION_PLAN.md)。
 
@@ -122,7 +122,7 @@ config:
 Cap 使用率用各自资产单位的总量除以 Cap，不等同于链上交易容量的精确预检。
 流动性增加和 Cap 为 info，其余为 warning，经现有渠道发送 Telegram。
 持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。
-Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，默认 `enabled: false`。
+Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，已启用（`enabled: true`）。
 
 新查询类型已通过官方 SDK schema
 [`801260c`](https://github.com/aave/aave-sdk/blob/801260c39921177c56f62d1f1e0d51971e9fd4bc/packages/graphql/schema.graphql)

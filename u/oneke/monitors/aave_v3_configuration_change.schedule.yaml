@@ -1,7 +1,7 @@
 summary: Check Aave V3 configuration changes every three minutes
 args: {}
 cron_version: v2
-enabled: false
+enabled: true
 is_flow: false
 no_flow_overlap: true
 schedule: 12 */3 * * * *
