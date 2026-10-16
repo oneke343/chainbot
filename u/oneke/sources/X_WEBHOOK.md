@@ -12,7 +12,7 @@ Bot 和群，不进入 FlashDuty。没有事件识别、去重、补采或自动
 - 两个脚本均开启 `has_preprocessor`；POST 路由开启 `raw_string`，签名针对原始
   请求体计算，不能重新序列化 JSON。
 - 路由使用 `sync`，脚本通过 `runFlow` 调用通知 Flow。所有分段使用 `Promise.all`
-  并行执行，全部完成后才响应成功，返回 `{ results: [...] }`。
+  并行执行，全部完成后才响应成功，仅返回 `{ ok: true }`，不返回 Flow 结果。
 
 在 Windmill 创建 Secret Variable `u/oneke/variables/x_client_secret`，填入 X App
 的 **OAuth 2.0 Client Secret**。`u/oneke/resources/x-webhook` Resource 引用它。
