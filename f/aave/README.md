@@ -123,6 +123,7 @@ Cap 使用率用各自资产单位的总量除以 Cap，不等同于链上交易
 流动性增加和 Cap 为 info，其余为 warning，经现有渠道发送 Telegram。
 持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。
 Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，已启用（`enabled: true`）。
+调度启用状态在推送 `main` 后由 GitHub Actions 同步到 Windmill。
 
 新查询类型已通过官方 SDK schema
 [`801260c`](https://github.com/aave/aave-sdk/blob/801260c39921177c56f62d1f1e0d51971e9fd4bc/packages/graphql/schema.graphql)
