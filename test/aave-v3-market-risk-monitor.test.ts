@@ -36,6 +36,7 @@ test("Monitor collects, evaluates and checkpoints one notification for multiple 
   const old = snapshot(0);
   const metrics = reserve();
   metrics.borrow!.availableLiquidity = decimal(400);
+  metrics.borrow!.apy = rate(700);
   const current = snapshot(15, metrics);
   const otherKey = "1/0xpool/0xweth";
   old.reserves[otherKey] = {
@@ -75,6 +76,11 @@ test("Monitor collects, evaluates and checkpoints one notification for multiple 
   });
   const findings = await evaluate(current, [old, current]);
   assert.equal(findings.length, 2);
+  assert.deepEqual(
+    findings.map((finding) => finding.metrics.length),
+    [2, 1],
+  );
+  assert.equal(JSON.stringify(findings).match(/"currentValues":/g)?.length, 2);
   completed_steps[evaluation.key] = findings;
   const notification = await next(completed_steps);
   assert.equal(notification.script, "u/oneke/channels/notification");
@@ -101,7 +107,14 @@ test("Monitor collects, evaluates and checkpoints one notification for multiple 
     notification.args.message.description,
     /资产：Wrapped Ether[^]*token: WETH[^]*liquidity: 300/,
   );
-  assert.match(notification.args.message.description, /borrow_apy: 0\.05/);
+  assert.match(
+    notification.args.message.description,
+    /资产：USD Coin[^]*borrow_apy: 0\.07/,
+  );
+  assert.match(
+    notification.args.message.description,
+    /资产：Wrapped Ether[^]*borrow_apy: 0\.05/,
+  );
   assert.doesNotMatch(
     notification.args.message.description,
     /Dai Stablecoin|DAI/,

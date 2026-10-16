@@ -116,7 +116,9 @@ test("near-full and exceeded caps do not alert; balance changes still do", async
   current.borrow!.borrowCap = decimal(400);
   current.borrow!.totalBorrow = decimal(550);
   assert.deepEqual(
-    (await main(snapshot(15, current), history())).map((hit) => hit.metric),
+    (await main(snapshot(15, current), history()))[0].metrics.map(
+      (hit) => hit.metric,
+    ),
     ["borrow_total"],
   );
 });
@@ -155,10 +157,13 @@ test("persistently high utilization stays quiet while other risk metrics still a
   changed.borrow!.apy = rate(700);
   changed.totalSupply = decimal(900);
   changed.borrow!.totalBorrow = decimal(550);
+  const findings = await main(snapshot(24, changed), samples);
+  assert.equal(findings.length, 1);
   assert.deepEqual(
-    (await main(snapshot(24, changed), samples)).map((hit) => hit.metric),
+    findings[0].metrics.map((hit) => hit.metric),
     ["liquidity", "borrow_apy", "supply_total", "borrow_total"],
   );
+  assert.equal(JSON.stringify(findings).match(/"currentValues":/g)?.length, 1);
 });
 
 test("endpoint changes still evaluate across sampling gaps", async () => {
@@ -167,7 +172,7 @@ test("endpoint changes still evaluate across sampling gaps", async () => {
   const current = structuredClone(before);
   current.borrow!.availableLiquidity = decimal(400);
   assert.deepEqual(
-    (await main(snapshot(15, current), [snapshot(0, before)])).map(
+    (await main(snapshot(15, current), [snapshot(0, before)]))[0].metrics.map(
       (hit) => hit.metric,
     ),
     ["liquidity"],
@@ -187,9 +192,9 @@ test("first sample is quiet; supply-only reserves and zero baselines remain mean
   const current = structuredClone(supplyOnly);
   current.totalSupply = decimal(800);
   assert.deepEqual(
-    (await main(snapshot(15, current), [snapshot(0, supplyOnly)])).map(
-      (hit) => hit.metric,
-    ),
+    (
+      await main(snapshot(15, current), [snapshot(0, supplyOnly)])
+    )[0].metrics.map((hit) => hit.metric),
     ["supply_total"],
   );
 });
@@ -220,6 +225,8 @@ test("notifications consume only findings and preserve values, units and severit
   const now = snapshot(17, current);
   const old = [snapshot(0, before)];
   const hits = await main(now, old);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].metrics.length, 2);
   const messages = await renderNotifications(hits);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
@@ -297,52 +304,54 @@ test("Handlebars renders standalone findings and groups reserves without changin
     {
       ...names,
       reserveKey: key,
-      metric: "liquidity",
-      direction: "decrease",
-      before: "500",
-      current: "400",
-      change: "-0.2",
-      thresholdBps: 2000,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "borrow_apy",
-      direction: "increase",
-      before: "0.05",
-      current: "0.07",
-      change: "0.02",
-      thresholdBps: 200,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "supply_total",
-      direction: "decrease",
-      before: "1000",
-      current: "900",
-      change: "-0.1",
-      thresholdBps: 1000,
-    },
-    {
-      ...names,
-      reserveKey: key,
-      metric: "borrow_total",
-      direction: "increase",
-      before: "500",
-      current: "550",
-      change: "0.1",
-      thresholdBps: 1000,
+      metrics: [
+        {
+          metric: "liquidity",
+          direction: "decrease",
+          before: "500",
+          current: "400",
+          change: "-0.2",
+          thresholdBps: 2000,
+        },
+        {
+          metric: "borrow_apy",
+          direction: "increase",
+          before: "0.05",
+          current: "0.07",
+          change: "0.02",
+          thresholdBps: 200,
+        },
+        {
+          metric: "supply_total",
+          direction: "decrease",
+          before: "1000",
+          current: "900",
+          change: "-0.1",
+          thresholdBps: 1000,
+        },
+        {
+          metric: "borrow_total",
+          direction: "increase",
+          before: "500",
+          current: "550",
+          change: "0.1",
+          thresholdBps: 1000,
+        },
+      ],
     },
     {
       ...names,
       reserveKey: "8453/<pool>&/asset",
-      metric: "liquidity",
-      direction: "increase",
-      before: "500",
-      current: "600",
-      change: "0.2",
-      thresholdBps: 2000,
+      metrics: [
+        {
+          metric: "liquidity",
+          direction: "increase",
+          before: "500",
+          current: "600",
+          change: "0.2",
+          thresholdBps: 2000,
+        },
+      ],
     },
   ];
   const before = structuredClone(findings);
@@ -382,25 +391,48 @@ test("notifications group assets by chain and market, with the highest severity 
     marketName: "Core",
     assetName: "USD Coin",
     currentValues: { ...values, liquidity: "600" },
-    metric: "liquidity",
-    direction: "increase",
-    before: "500",
-    current: "600",
-    change: "0.2",
-    thresholdBps: 2000,
+    metrics: [
+      {
+        metric: "liquidity",
+        direction: "increase",
+        before: "500",
+        current: "600",
+        change: "0.2",
+        thresholdBps: 2000,
+      },
+    ],
   };
   const findings: Finding[] = [
-    liquidity,
+    {
+      ...liquidity,
+      metrics: [
+        ...liquidity.metrics,
+        {
+          metric: "borrow_total",
+          direction: "increase",
+          before: "500",
+          current: "550",
+          change: "0.1",
+          thresholdBps: 1000,
+        },
+      ],
+    },
     {
       ...liquidity,
       reserveKey: "1/0xpool/0xweth",
       assetName: "Wrapped Ether",
       currentValues: { ...values, token: "WETH", liquidity: "400" },
-      direction: "decrease",
-      current: "400",
-      change: "-0.2",
+      metrics: [
+        {
+          metric: "liquidity",
+          direction: "decrease",
+          before: "500",
+          current: "400",
+          change: "-0.2",
+          thresholdBps: 2000,
+        },
+      ],
     },
-    { ...liquidity, metric: "borrow_total", thresholdBps: 1000 },
     { ...liquidity, reserveKey: "8453/0xpool/0xasset" },
     { ...liquidity, reserveKey: "1/0xotherpool/0xasset" },
   ];
