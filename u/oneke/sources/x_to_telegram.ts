@@ -25,37 +25,42 @@ export async function preprocessor(event: {
 }
 
 export async function main(raw_body: string, signature: string) {
-  const credentials: RT.CXWebhook = await wmill.getResource("u/oneke/resources/x-webhook");
-  const expected = "sha256=" + createHmac("sha256", credentials.client_secret)
-    .update(raw_body)
-    .digest("base64");
-  if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-    throw new Error("Invalid X webhook signature");
+  try {
+    const credentials: RT.CXWebhook = await wmill.getResource("u/oneke/resources/x-webhook");
+    const expected = "sha256=" + createHmac("sha256", credentials.client_secret)
+      .update(raw_body)
+      .digest("base64");
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      throw new Error("Invalid X webhook signature");
+    }
+
+    const { data }: PostCreated = JSON.parse(raw_body);
+    if (data.event_type !== "post.create") {
+      throw new Error(`Unsupported X event: ${data.event_type}`);
+    }
+
+    const post = data.payload;
+    const text = Array.from(post.note_tweet?.text ?? post.text);
+    const publishedAt = new Date(post.created_at)
+      .toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
+    const footer = `发布时间：${publishedAt} +08:00\n原帖：https://x.com/i/web/status/${post.id}`;
+    const job_ids: string[] = [];
+
+    // 1700 Unicode characters leave room for the header/footer even with emoji.
+    // A media-only post still sends its timestamp and link.
+    for (let offset = 0; offset < Math.max(text.length, 1); offset += 1700) {
+      job_ids.push(await wmill.runFlowAsync("u/oneke/channels/notification", {
+        message: {
+          level: "info",
+          title: `X · ${data.tag}`,
+          description: `${text.slice(offset, offset + 1700).join("")}\n\n${footer}`,
+        },
+      }));
+    }
+
+    return { job_ids };
+  } catch (error) {
+    // Sync Windmill routes otherwise acknowledge failed scripts with HTTP 200.
+    return { wm_status_code: 500, wm_failure: String(error) };
   }
-
-  const { data }: PostCreated = JSON.parse(raw_body);
-  if (data.event_type !== "post.create") {
-    throw new Error(`Unsupported X event: ${data.event_type}`);
-  }
-
-  const post = data.payload;
-  const text = Array.from(post.note_tweet?.text ?? post.text);
-  const publishedAt = new Date(post.created_at)
-    .toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
-  const footer = `发布时间：${publishedAt} +08:00\n原帖：https://x.com/i/web/status/${post.id}`;
-  const job_ids: string[] = [];
-
-  // 1700 Unicode characters leave room for the header/footer even with emoji.
-  // A media-only post still sends its timestamp and link.
-  for (let offset = 0; offset < Math.max(text.length, 1); offset += 1700) {
-    job_ids.push(await wmill.runFlowAsync("u/oneke/channels/notification", {
-      message: {
-        level: "info",
-        title: `X · ${data.tag}`,
-        description: `${text.slice(offset, offset + 1700).join("")}\n\n${footer}`,
-      },
-    }));
-  }
-
-  return { job_ids };
 }

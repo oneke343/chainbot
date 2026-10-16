@@ -62,20 +62,60 @@ test("altered body, invalid signature and missing signature never enqueue a noti
     [raw, undefined],
     [JSON.stringify(JSON.parse(raw), null, 2), signature],
   ]) {
-    await assert.rejects(forward(body, sig));
+    const result = await forward(body, sig);
+    assert.equal(result.wm_status_code, 500);
+    assert.ok(result.wm_failure);
+    assert.equal("job_ids" in result, false);
   }
   assert.equal(enqueue.mock.callCount(), 0);
 });
 
-test("signed malformed payloads and Windmill queue errors propagate", async (t) => {
+test("signed malformed payloads are rejected before enqueueing", async (t) => {
   signingResource(t);
   const sign = (body: string) => "sha256=" + createHmac("sha256", secret).update(body).digest("base64");
   const enqueue = t.mock.method(wmill, "runFlowAsync", async () => { throw new Error("Queue unavailable"); });
-  await assert.rejects(forward("not json", sign("not json")), SyntaxError);
+  const malformed = await forward("not json", sign("not json"));
+  assert.equal(malformed.wm_status_code, 500);
+  assert.match(malformed.wm_failure, /^SyntaxError:/);
   const unsupported = raw.replace("post.create", "post.delete");
-  await assert.rejects(forward(unsupported, sign(unsupported)), /Unsupported X event: post.delete/);
+  assert.deepEqual(await forward(unsupported, sign(unsupported)), {
+    wm_status_code: 500,
+    wm_failure: "Error: Unsupported X event: post.delete",
+  });
   assert.equal(enqueue.mock.callCount(), 0);
-  await assert.rejects(forward(raw, signature), /Queue unavailable/);
+});
+
+test("queue rejection marks the Windmill Job failed and returns a retryable HTTP error", async (t) => {
+  signingResource(t);
+  t.mock.method(wmill, "runFlowAsync", async () => { throw new Error("Queue unavailable"); });
+  const result = await forward(raw, signature);
+  assert.deepEqual(result, {
+    wm_status_code: 500,
+    wm_failure: "Error: Queue unavailable",
+  });
+  assert.equal("job_ids" in result, false);
+});
+
+test("resource failures and partial enqueue failures are not acknowledged as success", async (t) => {
+  const resource = signingResource(t);
+  const enqueue = t.mock.method(wmill, "runFlowAsync", async () => "first-job");
+  resource.mock.mockImplementationOnce(async () => { throw new Error("Resource unavailable"); });
+  assert.deepEqual(await forward(raw, signature), {
+    wm_status_code: 500,
+    wm_failure: "Error: Resource unavailable",
+  });
+  assert.equal(enqueue.mock.callCount(), 0);
+
+  enqueue.mock.mockImplementationOnce(async () => { throw new Error("Second enqueue failed"); }, 1);
+  const event = JSON.parse(raw);
+  event.data.payload.text = "a".repeat(2000);
+  const body = JSON.stringify(event);
+  const sig = "sha256=" + createHmac("sha256", secret).update(body).digest("base64");
+  assert.deepEqual(await forward(body, sig), {
+    wm_status_code: 500,
+    wm_failure: "Error: Second enqueue failed",
+  });
+  assert.equal(enqueue.mock.callCount(), 2);
 });
 
 test("long Unicode posts retain all text and fit Telegram's limit; media-only posts retain their link", async (t) => {

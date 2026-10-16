@@ -54,8 +54,10 @@ App-only Bearer Token；它只用于设置，不需要保存在本项目的接�
 消息包含账号、原文、Asia/Shanghai 发布时间和原帖链接。长正文按 1700 个
 Unicode 字符分段，每段保留时间与链接，为 Telegram 的 4096 字符限制预留空间。
 
-CRC 参数缺失、签名缺失或错误、JSON/事件格式错误、Resource 读取失败、Job 提交失败
-都直接抛错。没有捕获异常或静默降级；无效签名不会提交任何通知。
+CRC 参数缺失或 Resource 读取失败时直接抛错，X 因收不到有效 token 而无法完成验证。
+POST 处理失败时返回 `wm_status_code: 500` 和字符串 `wm_failure`：前者使 X 收到投递
+失败，后者让 Windmill 将 Job 记录为失败。同步路由默认会把抛错结果用 HTTP 200
+返回，因此不能仅依靠异常传播。无效签名不会提交任何通知；不做静默降级。
 X 请求必须在其 10 秒回调时限内完成入队，仍需在部署后的实例验证排队延迟。
 
 回调成功表示通知 Job 已入队，不表示 Telegram 已送达。Telegram 投递失败会留下
@@ -74,3 +76,4 @@ npm run check
 
 接口依据：[X Webhook 验证与签名](https://docs.x.com/x-api/webhooks/quickstart)、
 [X Activity 消息格式](https://docs.x.com/x-api/activity/event-payloads)。
+HTTP 失败契约见 [Windmill 同步响应与 wm_failure](https://www.windmill.dev/docs/core_concepts/webhooks#asynchronous-vs-synchronous)。
