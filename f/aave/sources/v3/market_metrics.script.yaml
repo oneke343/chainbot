@@ -1,0 +1,14 @@
+summary: Collect Aave V3 reserve metrics
+description: Discover mainnets, query all markets once and checkpoint the
+  collection timestamp.
+lock: "!inline f/aave/sources/v3/market_metrics.script.lock"
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    api:
+      type: object
+      format: resource-graphql
+  required:
+    - api

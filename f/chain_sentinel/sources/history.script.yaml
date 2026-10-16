@@ -1,0 +1,21 @@
+summary: Read successful Source history
+description: Return successful Source jobs within job start-time bounds,
+  including their results.
+lock: "!inline f/chain_sentinel/sources/history.script.lock"
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    source_path:
+      type: string
+    started_after:
+      type: string
+      format: date-time
+    started_before:
+      type: string
+      format: date-time
+  required:
+    - source_path
+    - started_after
+    - started_before

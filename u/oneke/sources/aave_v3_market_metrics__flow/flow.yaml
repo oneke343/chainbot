@@ -1,0 +1,22 @@
+summary: Collect Aave V3 reserve metrics
+description: Collect timestamped reserve metrics across mainnets with one GraphQL query.
+value:
+  modules:
+    - id: collect_metrics
+      summary: Collect Aave V3 reserve metrics
+      value:
+        type: script
+        path: f/aave/sources/v3/market_metrics
+        input_transforms:
+          api:
+            type: static
+            value: $res:f/aave/resources/aave_v3
+      timeout:
+        type: static
+        value: 180
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  order: []
+  properties: {}
+  required: []
