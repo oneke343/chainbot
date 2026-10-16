@@ -6,7 +6,7 @@ locks:
   f/aave/lib/v3-types: 2ad1f7f25ecd779c214c005851315bde920753c359bc90dad1cac35e6ba66b49
   f/aave/lib/v4-types: 167fe4636969b371e595278d5bcd9020ce581033b6423a6b349886956b074bcf
   f/aave/rules/aave_v3_hf: 7ab2f65150247f7010169d4c556982edc91ca845f29e84a6ce751a456225afb3
-  f/aave/rules/aave_v3_market_risk: a34c1106fb674479dddea4d34c2ef7c1345551d4f74b183b2438f229605a97ac
+  f/aave/rules/aave_v3_market_risk: b6d4b8ca6b04859a4c29920c2e99f282d500276bd920e2c4d4ef861205e55a5c
   f/aave/rules/aave_v4_hf: ac8307cfbfe697c05b3a63069d851c493e95e8c9d22fc354504e334dad153e22
   f/aave/sources/v3/chains: f8f4bd9836e8adb534848493a333e4b751e80e48bcdadd23297ca3824b2f13c0
   f/aave/sources/v3/market_metrics: 05b5569197a2227f873951c660f82c70456e6b97860b193b0bcb30df530e9e3b

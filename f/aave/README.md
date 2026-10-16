@@ -113,6 +113,9 @@ config:
 findings 自带 marketName 和 assetName（底层 token 全名），标题展示市场名称，描述按资产分段；reserveKey 仅用于内部分组。
 `renderNotifications(findings)` 仅使用 findings，通过共享 `f/handlebars/render` 按市场、资产遍历，
 展示 metric、方向、前后值、变化和 bps 阈值。余额单位为底层 token；比率保留 1=100% 的原始口径，APY 差值 0.02=2 个百分点。
+每条 Finding 的 `currentValues` 携带该资产本次采样的全部指标；通知在每个触发资产下展示一次，
+包含采样时间、token 单位、供给量、Supply Cap，以及借款量、可用流动性、利用率、利率拐点、借款 APY 和 Borrow Cap。
+未触发的指标也展示，未触发的资产不展示；`borrow: null` 时仅展示供给相关指标。
 Source 保留 Supply / Borrow Cap 数据供容量查看，动态风险 Monitor 不根据 Cap 使用率告警；
 Cap 参数变化继续由 `aave_v3_configuration_change` 通知。
 Source 保留利用率和利率拐点数据，动态风险 Monitor 不根据高利用率告警。

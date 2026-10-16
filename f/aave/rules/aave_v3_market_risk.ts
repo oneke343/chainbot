@@ -53,6 +53,7 @@ export interface Finding extends MetricFinding {
   reserveKey: ReserveKey;
   marketName: string;
   assetName: string;
+  currentValues: Record<string, string>;
 }
 
 export function findBaseline(
@@ -84,6 +85,28 @@ function aligned(a: Decimal, b: Decimal): [bigint, bigint, number] {
 
 function value(decimal: Decimal): string {
   return formatUnits(BigInt(decimal.raw), decimal.decimals);
+}
+
+function currentValues(
+  reserve: ReserveMetrics,
+  sampledAt: string,
+): Record<string, string> {
+  return {
+    sampled_at: sampledAt,
+    token: reserve.symbol,
+    supply_total: value(reserve.totalSupply),
+    supply_cap: value(reserve.supplyCap),
+    ...(reserve.borrow === null
+      ? {}
+      : {
+          borrow_total: value(reserve.borrow.totalBorrow),
+          liquidity: value(reserve.borrow.availableLiquidity),
+          utilization: value(reserve.borrow.utilizationRate),
+          optimal_usage_rate: value(reserve.borrow.optimalUsageRate),
+          borrow_apy: value(reserve.borrow.apy),
+          borrow_cap: value(reserve.borrow.borrowCap),
+        }),
+  };
 }
 
 function ratio(numerator: bigint, denominator: bigint): string {
@@ -205,12 +228,15 @@ export async function main(
         ...evaluateBalances(before, reserve, thresholds),
       );
     }
+    if (hits.length === 0) continue;
+    const values = currentValues(reserve, current.sampledAt);
     findings.push(
       ...hits.map((hit) => ({
         ...hit,
         reserveKey: key,
         marketName: reserve.marketName,
         assetName: reserve.assetName,
+        currentValues: values,
       })),
     );
   }
@@ -259,6 +285,11 @@ const NOTIFICATION_TEMPLATE = `
 
 {{#each this}}
 - {{metric}} ({{direction}}): {{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}; 阈值 {{thresholdBps}} bps。
+{{/each}}
+
+当前指标（金额单位为 token；比率 1=100%）
+{{#each this.[0].currentValues}}
+{{@key}}: {{this}}
 {{/each}}
 
 {{/each}}
