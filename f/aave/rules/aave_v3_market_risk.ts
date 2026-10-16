@@ -282,12 +282,12 @@ const NOTIFICATION_TEMPLATE = `
 资产：{{assetName}}
 
 {{#each metrics}}
-- {{metric}} ({{direction}}): {{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}; 阈值 {{thresholdBps}} bps。
+- {{metric}} ({{direction}}): {{#if (eq metric "borrow_apy")}}{{#if before}}{{percent before}} → {{/if}}{{percent current}}{{#if change}}；变化 {{pp change}}{{/if}}{{else}}{{#if before}}{{number before}} → {{/if}}{{number current}}{{#if change}}；变化 {{percent change}}{{/if}}{{/if}}; 阈值 {{thresholdBps}} bps。
 {{/each}}
 
-当前指标（金额单位为 token；比率 1=100%）
+当前指标（金额单位为 token；比率以 % 展示）
 {{#each currentValues}}
-{{@key}}: {{this}}
+{{@key}}: {{#if (eq @key "sampled_at")}}{{this}}{{else if (eq @key "token")}}{{this}}{{else if (eq @key "utilization")}}{{percent this}}{{else if (eq @key "optimal_usage_rate")}}{{percent this}}{{else if (eq @key "borrow_apy")}}{{percent this}}{{else}}{{number this}}{{/if}}
 {{/each}}
 
 {{/each}}

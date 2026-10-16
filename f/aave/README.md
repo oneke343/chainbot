@@ -112,7 +112,8 @@ config:
 同一 Market 下所有命中资产的指标合并成一条通知，按链 ID 和市场地址分组，跨链或不同地址的同名市场分别发送。
 findings 自带 marketName 和 assetName（底层 token 全名），标题展示市场名称，描述按资产分段；reserveKey 仅用于内部分组。
 `renderNotifications(findings)` 仅使用 findings，通过共享 `f/handlebars/render` 按市场、资产遍历，
-展示 metric、方向、前后值、变化和 bps 阈值。余额单位为底层 token；比率保留 1=100% 的原始口径，APY 差值 0.02=2 个百分点。
+展示 metric、方向、前后值、变化和 bps 阈值。金额添加千分位并最多显示 4 位小数；APY、利用率和余额变化显示为百分比，最多 2 位小数。
+APY 变化使用 pp（百分点），例如 0.02 显示为 2 pp；极小非零值用科学计数法显示。格式化仅作用于通知，Source、findings 和阈值计算保持原始精度。
 每个触发资产只返回一条 Finding：`metrics` 保存全部命中指标，`currentValues` 保存一份本次采样的全部指标。
 资产名称、市场名称和当前值不在每条命中指标中重复；通知在每个触发资产下展示一次当前指标，
 包含采样时间、token 单位、供给量、Supply Cap，以及借款量、可用流动性、利用率、利率拐点、借款 APY 和 Borrow Cap。

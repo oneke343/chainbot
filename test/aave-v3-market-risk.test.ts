@@ -235,24 +235,24 @@ test("notifications consume only findings and preserve values, units and severit
   assert.ok(!messages[0].description.includes(key));
   assert.match(
     messages[0].description,
-    /liquidity \(decrease\): 500 → 400；变化 -0\.2; 阈值 2000 bps/,
+    /liquidity \(decrease\): 500 → 400；变化 -20%; 阈值 2000 bps/,
   );
   assert.match(
     messages[0].description,
-    /borrow_apy \(increase\): 0\.05 → 0\.07；变化 0\.02; 阈值 200 bps/,
+    /borrow_apy \(increase\): 5% → 7%；变化 2 pp; 阈值 200 bps/,
   );
   assert.match(
     messages[0].description,
-    /当前指标（金额单位为 token；比率 1=100%）/,
+    /当前指标（金额单位为 token；比率以 % 展示）/,
   );
-  assert.match(messages[0].description, /supply_total: 1000/);
+  assert.match(messages[0].description, /supply_total: 1,000/);
   assert.match(messages[0].description, /borrow_total: 500/);
   assert.match(messages[0].description, /liquidity: 400/);
-  assert.match(messages[0].description, /borrow_apy: 0\.07/);
-  assert.match(messages[0].description, /utilization: 0\.5/);
-  assert.match(messages[0].description, /optimal_usage_rate: 0\.9/);
-  assert.match(messages[0].description, /supply_cap: 10000/);
-  assert.match(messages[0].description, /borrow_cap: 10000/);
+  assert.match(messages[0].description, /borrow_apy: 7%/);
+  assert.match(messages[0].description, /utilization: 50%/);
+  assert.match(messages[0].description, /optimal_usage_rate: 90%/);
+  assert.match(messages[0].description, /supply_cap: 10,000/);
+  assert.match(messages[0].description, /borrow_cap: 10,000/);
   assert.match(
     messages[0].description,
     /sampled_at: 2026-10-16T04:17:00\.000Z/,
@@ -286,12 +286,37 @@ test("supply-only alerts carry precise current values without borrow metrics", a
     supply_cap: "2000",
   });
   const [message] = await renderNotifications(findings);
-  assert.match(message.description, /supply_total: 900\.0000000000000009/);
-  assert.match(message.description, /supply_cap: 2000/);
+  assert.match(message.description, /supply_total: 900\n/);
+  assert.match(message.description, /supply_cap: 2,000/);
   assert.doesNotMatch(
     message.description,
     /borrow_|liquidity|utilization|optimal_usage_rate|undefined/,
   );
+});
+
+test("notifications round long decimals while findings retain their original values", async () => {
+  const before = reserve();
+  before.borrow!.availableLiquidity = decimal("1000000123456789", 9);
+  const current = structuredClone(before);
+  current.borrow!.availableLiquidity = decimal("800000098765431", 9);
+  current.borrow!.apy = decimal("7006912", 8);
+  current.borrow!.utilizationRate = decimal("9123456789", 10);
+  const findings = await main(snapshot(15, current), [snapshot(0, before)]);
+  const original = structuredClone(findings);
+  const [message] = await renderNotifications(findings);
+  assert.match(
+    message.description,
+    /1,000,000\.1235 → 800,000\.0988；变化 -20%/,
+  );
+  assert.match(
+    message.description,
+    /borrow_apy \(increase\): 5% → 7\.01%；变化 2\.01 pp/,
+  );
+  assert.match(message.description, /liquidity: 800,000\.0988/);
+  assert.match(message.description, /utilization: 91\.23%/);
+  assert.match(message.description, /borrow_apy: 7\.01%/);
+  assert.deepEqual(findings, original);
+  assert.equal(findings[0].currentValues.liquidity, "800000.098765431");
 });
 
 test("Handlebars renders standalone findings and groups reserves without changing their contents", async () => {
@@ -373,10 +398,10 @@ test("Handlebars renders standalone findings and groups reserves without changin
     4,
   );
   for (const line of [
-    "- liquidity (decrease): 500 → 400；变化 -0.2; 阈值 2000 bps。",
-    "- borrow_apy (increase): 0.05 → 0.07；变化 0.02; 阈值 200 bps。",
-    "- supply_total (decrease): 1000 → 900；变化 -0.1; 阈值 1000 bps。",
-    "- borrow_total (increase): 500 → 550；变化 0.1; 阈值 1000 bps。",
+    "- liquidity (decrease): 500 → 400；变化 -20%; 阈值 2000 bps。",
+    "- borrow_apy (increase): 5% → 7%；变化 2 pp; 阈值 200 bps。",
+    "- supply_total (decrease): 1,000 → 900；变化 -10%; 阈值 1000 bps。",
+    "- borrow_total (increase): 500 → 550；变化 10%; 阈值 1000 bps。",
   ])
     assert.ok(message.description.includes(line), line);
   assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);

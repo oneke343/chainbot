@@ -87,13 +87,13 @@ test("Monitor collects, evaluates and checkpoints one notification for multiple 
   assert.equal(notification.args.message.level, "warning");
   assert.match(
     notification.args.message.description,
-    /liquidity \(decrease\): 500 → 400；变化 -0\.2/,
+    /liquidity \(decrease\): 500 → 400；变化 -20%/,
   );
   assert.equal(notification.args.message.title, "Aave V3 Core 指标提醒");
   assert.match(notification.args.message.description, /资产：USD Coin/);
   assert.match(
     notification.args.message.description,
-    /资产：Wrapped Ether[^]*liquidity \(decrease\): 500 → 300；变化 -0\.4/,
+    /资产：Wrapped Ether[^]*liquidity \(decrease\): 500 → 300；变化 -40%/,
   );
   assert.equal(
     notification.args.message.description.match(/当前指标/g)?.length,
@@ -109,11 +109,11 @@ test("Monitor collects, evaluates and checkpoints one notification for multiple 
   );
   assert.match(
     notification.args.message.description,
-    /资产：USD Coin[^]*borrow_apy: 0\.07/,
+    /资产：USD Coin[^]*borrow_apy: 7%/,
   );
   assert.match(
     notification.args.message.description,
-    /资产：Wrapped Ether[^]*borrow_apy: 0\.05/,
+    /资产：Wrapped Ether[^]*borrow_apy: 5%/,
   );
   assert.doesNotMatch(
     notification.args.message.description,
