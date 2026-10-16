@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import wmill, { type WorkflowCtx } from "windmill-client";
 import { main as monitor } from "../u/oneke/monitors/aave_v3_market_risk.ts";
-import { main as evaluate, DEFAULT_CONFIG } from "../f/aave/rules/aave_v3_market_risk.ts";
+import {
+  main as evaluate,
+  DEFAULT_CONFIG,
+} from "../f/aave/rules/aave_v3_market_risk.ts";
 import { decimal, reserve, snapshot } from "./fixtures/aave-v3-reserves.ts";
 
 async function next(completed_steps: Record<string, unknown>) {
@@ -19,7 +22,9 @@ async function next(completed_steps: Record<string, unknown>) {
 
 test("Monitor collects, reads history once, evaluates and checkpoints notification", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
-  t.mock.method(globalThis, "fetch", () => { throw new Error("no I/O in workflow body"); });
+  t.mock.method(globalThis, "fetch", () => {
+    throw new Error("no I/O in workflow body");
+  });
   const completed_steps: Record<string, unknown> = {};
   const old = snapshot(0);
   const metrics = reserve();
@@ -33,12 +38,17 @@ test("Monitor collects, reads history once, evaluates and checkpoints notificati
   assert.equal(history.script, "f/chain_sentinel/sources/history");
   assert.deepEqual(history.args, {
     source_path: "u/oneke/sources/aave_v3_market_metrics",
-    started_after: snapshot(-15).sampledAt, started_before: current.sampledAt,
+    started_after: snapshot(-15).sampledAt,
+    started_before: current.sampledAt,
   });
   completed_steps[history.key] = [{ result: old }, { result: current }];
   const evaluation = await next(completed_steps);
   assert.equal(evaluation.script, "f/aave/rules/aave_v3_market_risk");
-  assert.deepEqual(evaluation.args, { current, history: [old, current], config: DEFAULT_CONFIG });
+  assert.deepEqual(evaluation.args, {
+    current,
+    history: [old, current],
+    config: DEFAULT_CONFIG,
+  });
   const findings = await evaluate(current, [old, current]);
   completed_steps[evaluation.key] = findings;
   const notification = await next(completed_steps);
@@ -57,9 +67,13 @@ test("Monitor collects, reads history once, evaluates and checkpoints notificati
 
 test("Monitor makes no notification when no rules trigger", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
-  const ctx = new wmill.WorkflowCtx({ completed_steps: {
-    aave_v3_market_metrics: snapshot(15), history: [], aave_v3_market_risk: [],
-  } });
+  const ctx = new wmill.WorkflowCtx({
+    completed_steps: {
+      aave_v3_market_metrics: snapshot(15),
+      history: [],
+      aave_v3_market_risk: [],
+    },
+  });
   wmill.setWorkflowCtx(ctx);
   assert.deepEqual(await monitor(), []);
   assert.deepEqual(ctx._flushPending(), []);
@@ -75,7 +89,12 @@ test("Monitor propagates collection, history, evaluation and notification failur
     { aave_v3_market_metrics: fail },
     { aave_v3_market_metrics: current, history: fail },
     { aave_v3_market_metrics: current, history: [], aave_v3_market_risk: fail },
-    { aave_v3_market_metrics: current, history: [], aave_v3_market_risk: findings, notification: fail },
+    {
+      aave_v3_market_metrics: current,
+      history: [],
+      aave_v3_market_risk: findings,
+      notification: fail,
+    },
   ]) {
     wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
     await assert.rejects(monitor(), /Task failed/);
