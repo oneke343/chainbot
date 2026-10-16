@@ -1,0 +1,22 @@
+query AaveV3MarketMetrics($chain_ids: [ChainId!]!) {
+  markets(request: { chainIds: $chain_ids }) {
+    name
+    address
+    chain { chainId }
+    reserves(request: { reserveType: BOTH }) {
+      underlyingToken { address symbol }
+      supplyInfo {
+        total { raw decimals }
+        supplyCap { amount { raw decimals } }
+      }
+      borrowInfo {
+        total { amount { raw decimals } }
+        availableLiquidity { amount { raw decimals } }
+        utilizationRate { raw decimals }
+        optimalUsageRate { raw decimals }
+        apy { raw decimals }
+        borrowCap { amount { raw decimals } }
+      }
+    }
+  }
+}

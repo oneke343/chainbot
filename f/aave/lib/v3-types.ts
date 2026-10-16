@@ -15,6 +15,13 @@ export type AaveV3ChainsQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type AaveV3ChainsQuery = { chains: Array<{ chainId: number, name: string }> };
 
+export type AaveV3MarketMetricsQueryVariables = Exact<{
+  chain_ids: Array<number> | number;
+}>;
+
+
+export type AaveV3MarketMetricsQuery = { markets: Array<{ name: string, address: string, chain: { chainId: number }, reserves: Array<{ underlyingToken: { address: string, symbol: string }, supplyInfo: { total: { raw: string, decimals: number }, supplyCap: { amount: { raw: string, decimals: number } } }, borrowInfo: { total: { amount: { raw: string, decimals: number } }, availableLiquidity: { amount: { raw: string, decimals: number } }, utilizationRate: { raw: string, decimals: number }, optimalUsageRate: { raw: string, decimals: number }, apy: { raw: string, decimals: number }, borrowCap: { amount: { raw: string, decimals: number } } } | null }> }> };
+
 export type AaveV3MarketParamsQueryVariables = Exact<{
   chain_ids: Array<number> | number;
 }>;

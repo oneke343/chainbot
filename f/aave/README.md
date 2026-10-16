@@ -67,6 +67,66 @@ Schedule 已提供为每三分钟第 12 秒执行、禁止重叠，默认 `enabl
 纯 GraphQL 仅监控 API 支持的配置采样差异，不代表链上逐笔修改或升级、权限审计。
 完整字段和范围见 [V3 配置监控设计](V3_CONFIGURATION_PLAN.md)。
 
+## Aave V3 Reserve 指标监控
+
+`u/oneke/sources/aave_v3_market_metrics` 绑定 V3 GraphQL Resource，调用
+`sources/v3/market_metrics.ts`。先发现主网（缓存一天），再通过一个
+`market_metrics_query.gql` 查询所有目标链和市场。Source 返回 `ReserveSnapshot`：
+`{ sampledAt, reserves }`，Reserve 按 `chainId/小写市场地址/小写底层资产地址` 索引。
+金额和比率保留 `raw + decimals`；`sampledAt` 在查询完成后通过 WAC `step` 固定，
+表示采集时间，不是链上区块时间。
+
+`u/oneke/monitors/aave_v3_market_risk` 先采集，再经
+`f/chain_sentinel/sources/history` 读取最近 30 分钟成功 Source job。
+通用历史入口按 job 开始时间过滤；Rule 按快照采样时间排序并排除当前及未来采样。
+基准选取当前时间减 15 分钟时点或之前最近的一条，最多提前 3 分钟，
+实际比较间隔为 15～18 分钟。没有符合条件的基准时，仅判断当前 Cap。
+
+默认阈值均使用 bps（100 bps = 1% 或 1 个百分点），比较包含阈值本身：
+
+| 配置项 | 默认值 | 条件 |
+| --- | --- | --- |
+| `liquidityChangeBps` | 2000 | 可用流动性增加或减少至少 20% |
+| `utilizationBufferBps` | 200 | 全窗口采样均达到各自当时的利率拐点 + 2 个百分点 |
+| `borrowApyRiseBps` | 200 | 借款 APY 上涨至少 2 个百分点，无当前 APY 上限 |
+| `supplyDropBps` | 1000 | 总供给减少至少 10%，无金额过滤 |
+| `borrowGrowthBps` | 1000 | 总借款增加至少 10%，无金额过滤 |
+| `capUsageBps` | 9500 | Supply 或 Borrow Cap 当前使用率至少 95% |
+
+利用率判断要求基准到当前的相邻采样间隔均不超过 6 分钟，且每个采样都有该 Reserve
+及借款信息；中间任一采样跌回触发线以下即不满足。它只证明已采集点的条件，
+不能证明采样间隔内完全没有回落。端点变化规则仍可在中间有采样缺口时判断。
+基准余额为零时跳过对应百分比变化；Cap 为零表示无限制，跳过使用率判断。
+`borrow: null` 的 Reserve 仍判断供给减少和 Supply Cap。
+
+Monitor 接收 `config`，由 `defaults` 和按 Reserve key 索引的 `overrides` 组成：
+
+```yaml
+config:
+  defaults:
+    liquidityChangeBps: 2000
+    utilizationBufferBps: 200
+    borrowApyRiseBps: 200
+    supplyDropBps: 1000
+    borrowGrowthBps: 1000
+    capUsageBps: 9500
+  overrides:
+    "1/0x市场地址/0x资产地址":
+      utilizationBufferBps: 100
+```
+
+同一 Reserve 的触发项合并成一条通知，包含前后值、单位、实际比较时间和阈值。
+Cap 使用率用各自资产单位的总量除以 Cap，通知同时展示总量和 Cap 的前后上限，
+帮助识别参数下调；它不等同于链上交易容量的精确预检。
+流动性增加和 Cap 为 info，其余为 warning，经现有渠道发送 Telegram。
+持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。
+Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，默认 `enabled: false`。
+
+新查询类型已通过官方 SDK schema
+[`801260c`](https://github.com/aave/aave-sdk/blob/801260c39921177c56f62d1f1e0d51971e9fd4bc/packages/graphql/schema.graphql)
+验证及生成；环境可访问 API 后，可通过根目录 Codegen 刷新为在线 schema。
+只读采集预览：`wmill flow preview u/oneke/sources/aave_v3_market_metrics -d '{}'`。
+
 ## Aave V4 配置变更
 
 配置采集由 `u/oneke/sources/aave_v4_configuration` 调用采集 WAC，
