@@ -238,18 +238,17 @@ test("notifications consume only findings and preserve values, units and severit
   const messages = await renderNotifications(hits);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].level, "warning");
-  assert.match(messages[0].description, /市场：Core\n资产：USD Coin/);
-  assert.equal(messages[0].title, "Aave V3 Core / USD Coin 指标提醒");
+  assert.match(messages[0].description, /资产：USD Coin/);
+  assert.equal(messages[0].title, "Aave V3 Core 指标提醒");
   assert.ok(!messages[0].description.includes(key));
   assert.match(
     messages[0].description,
-    /liquidity \(decrease\)：500 → 400；变化 -0\.2；阈值 2000 bps/,
+    /liquidity \(decrease\): 500 → 400；变化 -0\.2; 阈值 2000 bps/,
   );
   assert.match(
     messages[0].description,
-    /borrow_apy \(increase\)：0\.05 → 0\.07；变化 0\.02；阈值 200 bps/,
+    /borrow_apy \(increase\): 0\.05 → 0\.07；变化 0\.02; 阈值 200 bps/,
   );
-  assert.match(messages[0].description, /余额单位为底层 token；比率 1=100%/);
   const increased = reserve();
   increased.borrow!.availableLiquidity = decimal(600);
   assert.equal(
@@ -328,13 +327,10 @@ test("Handlebars renders standalone findings and groups reserves without changin
   const messages = await renderNotifications(findings);
   assert.equal(messages.length, 2);
   const [message, other] = messages;
-  assert.equal(
-    message.title,
-    "Aave V3 Core <risk> / USD Coin & token 指标提醒",
-  );
+  assert.equal(message.title, "Aave V3 Core <risk> 指标提醒");
   assert.equal(message.level, "warning");
   assert.equal(other.level, "info");
-  assert.match(other.description, /市场：Core <risk>\n资产：USD Coin & token/);
+  assert.match(other.description, /资产：USD Coin & token/);
   assert.ok(!other.description.includes("8453/<pool>&/asset"));
   assert.doesNotMatch(
     other.description,
@@ -346,15 +342,62 @@ test("Handlebars renders standalone findings and groups reserves without changin
     5,
   );
   for (const line of [
-    "- liquidity (decrease)：500 → 400；变化 -0.2；阈值 2000 bps。",
-    "- borrow_apy (increase)：0.05 → 0.07；变化 0.02；阈值 200 bps。",
-    "- supply_total (decrease)：1000 → 900；变化 -0.1；阈值 1000 bps。",
-    "- borrow_total (increase)：500 → 550；变化 0.1；阈值 1000 bps。",
-    "- utilization (above)：0.92；阈值 200 bps。",
+    "- liquidity (decrease): 500 → 400；变化 -0.2; 阈值 2000 bps。",
+    "- borrow_apy (increase): 0.05 → 0.07；变化 0.02; 阈值 200 bps。",
+    "- supply_total (decrease): 1000 → 900；变化 -0.1; 阈值 1000 bps。",
+    "- borrow_total (increase): 500 → 550；变化 0.1; 阈值 1000 bps。",
+    "- utilization (above): 0.92; 阈值 200 bps。",
   ])
     assert.ok(message.description.includes(line), line);
   assert.doesNotMatch(message.description, /&amp;|&lt;|undefined/);
   assert.match(message.description, /\n\n- liquidity/);
   assert.deepEqual(findings, before);
   assert.deepEqual(await renderNotifications([]), []);
+});
+
+test("notifications group assets by chain and market, with the highest severity per market", async () => {
+  const liquidity: Finding = {
+    reserveKey: key,
+    marketName: "Core",
+    assetName: "USD Coin",
+    metric: "liquidity",
+    direction: "increase",
+    before: "500",
+    current: "600",
+    change: "0.2",
+    thresholdBps: 2000,
+  };
+  const findings: Finding[] = [
+    liquidity,
+    {
+      ...liquidity,
+      reserveKey: "1/0xpool/0xweth",
+      assetName: "Wrapped Ether",
+      direction: "decrease",
+      current: "400",
+      change: "-0.2",
+    },
+    { ...liquidity, metric: "borrow_total", thresholdBps: 1000 },
+    { ...liquidity, reserveKey: "8453/0xpool/0xasset" },
+    { ...liquidity, reserveKey: "1/0xotherpool/0xasset" },
+  ];
+  const before = structuredClone(findings);
+  const messages = await renderNotifications(findings);
+  assert.equal(messages.length, 3);
+  assert.deepEqual(
+    messages.map((message) => message.level),
+    ["warning", "info", "info"],
+  );
+  assert.equal(messages[0].title, "Aave V3 Core 指标提醒");
+  assert.match(
+    messages[0].description,
+    /资产：USD Coin\n\n- liquidity[^]*- borrow_total[^]*资产：Wrapped Ether\n\n- liquidity \(decrease\)/,
+  );
+  assert.equal(messages[0].description.match(/资产：USD Coin/g)?.length, 1);
+  assert.doesNotMatch(messages[0].description, /市场：Core/);
+  for (const message of messages.slice(1)) {
+    assert.doesNotMatch(message.description, /Wrapped Ether|borrow_total/);
+    assert.match(message.description, /资产：USD Coin/);
+  }
+  assert.deepEqual(findings, before);
 });

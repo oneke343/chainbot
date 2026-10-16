@@ -113,13 +113,13 @@ config:
       utilizationBufferBps: 100
 ```
 
-同一 Reserve 的触发项合并成一条通知。findings 自带 marketName 和 assetName（底层 token 全名），
-标题和描述展示市场与资产名称，reserveKey 用于内部区分和分组。
-`renderNotifications(findings)` 通过共享 `f/handlebars/render` 直接遍历 findings，
-展示 metric、方向、前后值、变化和 bps 阈值。比率保留 1=100% 的原始口径，通知附带单位说明。
+同一 Market 下所有命中资产的指标合并成一条通知，按链 ID 和市场地址分组，跨链或不同地址的同名市场分别发送。
+findings 自带 marketName 和 assetName（底层 token 全名），标题展示市场名称，描述按资产分段；reserveKey 仅用于内部分组。
+`renderNotifications(findings)` 仅使用 findings，通过共享 `f/handlebars/render` 按市场、资产遍历，
+展示 metric、方向、前后值、变化和 bps 阈值。余额单位为底层 token；比率保留 1=100% 的原始口径，APY 差值 0.02=2 个百分点。
 Source 保留 Supply / Borrow Cap 数据供容量查看，动态风险 Monitor 不根据 Cap 使用率告警；
 Cap 参数变化继续由 `aave_v3_configuration_change` 通知。
-流动性增加为 info，其余为 warning，经现有渠道发送 Telegram。
+流动性增加为 info，其余为 warning；市场内任意指标为 warning 时整条通知为 warning，经现有渠道发送 Telegram。
 持续命中每轮继续通知；失败直接传播，Source 历史不因通知失败而撤回。
 Schedule 每三分钟第 42 秒运行，Asia/Shanghai、禁止重叠，已启用（`enabled: true`）。
 调度启用状态在推送 `main` 后由 GitHub Actions 同步到 Windmill。

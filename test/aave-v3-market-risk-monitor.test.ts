@@ -6,7 +6,12 @@ import {
   main as evaluate,
   DEFAULT_CONFIG,
 } from "../f/aave/rules/aave_v3_market_risk.ts";
-import { decimal, reserve, snapshot } from "./fixtures/aave-v3-reserves.ts";
+import {
+  key,
+  decimal,
+  reserve,
+  snapshot,
+} from "./fixtures/aave-v3-reserves.ts";
 
 async function next(completed_steps: Record<string, unknown>) {
   wmill.setWorkflowCtx(new wmill.WorkflowCtx({ completed_steps }));
@@ -20,7 +25,7 @@ async function next(completed_steps: Record<string, unknown>) {
   return steps[0];
 }
 
-test("Monitor collects, reads history once, evaluates and checkpoints notification", async (t) => {
+test("Monitor collects, evaluates and checkpoints one notification for multiple assets in a market", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   t.mock.method(globalThis, "fetch", () => {
     throw new Error("no I/O in workflow body");
@@ -30,6 +35,15 @@ test("Monitor collects, reads history once, evaluates and checkpoints notificati
   const metrics = reserve();
   metrics.borrow!.availableLiquidity = decimal(400);
   const current = snapshot(15, metrics);
+  const otherKey = "1/0xpool/0xweth";
+  old.reserves[otherKey] = {
+    ...structuredClone(old.reserves[key]),
+    assetAddress: "0xweth",
+    assetName: "Wrapped Ether",
+    symbol: "WETH",
+  };
+  current.reserves[otherKey] = structuredClone(old.reserves[otherKey]);
+  current.reserves[otherKey].borrow!.availableLiquidity = decimal(300);
   const collection = await next(completed_steps);
   assert.equal(collection.script, "u/oneke/sources/aave_v3_market_metrics");
   assert.equal(collection.dispatch_type, "flow");
@@ -50,13 +64,20 @@ test("Monitor collects, reads history once, evaluates and checkpoints notificati
     config: DEFAULT_CONFIG,
   });
   const findings = await evaluate(current, [old, current]);
+  assert.equal(findings.length, 2);
   completed_steps[evaluation.key] = findings;
   const notification = await next(completed_steps);
   assert.equal(notification.script, "u/oneke/channels/notification");
   assert.equal(notification.args.message.level, "warning");
   assert.match(
     notification.args.message.description,
-    /liquidity \(decrease\)：500 → 400；变化 -0\.2/,
+    /liquidity \(decrease\): 500 → 400；变化 -0\.2/,
+  );
+  assert.equal(notification.args.message.title, "Aave V3 Core 指标提醒");
+  assert.match(notification.args.message.description, /资产：USD Coin/);
+  assert.match(
+    notification.args.message.description,
+    /资产：Wrapped Ether[^]*liquidity \(decrease\): 500 → 300；变化 -0\.4/,
   );
   completed_steps[notification.key] = { delivered: true };
   const ctx = new wmill.WorkflowCtx({ completed_steps });
