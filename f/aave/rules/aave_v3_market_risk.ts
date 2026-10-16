@@ -296,11 +296,12 @@ export interface Notification {
 export async function renderNotifications(
   findings: Finding[],
 ): Promise<Notification[]> {
-  const groups = new Map<ReserveKey, Finding[]>();
+  const groups = new Map<string, Finding[]>();
   for (const finding of findings) {
-    const group = groups.get(finding.reserveKey) ?? [];
+    const marketKey = finding.reserveKey.split("/").slice(0, 2).join("/");
+    const group = groups.get(marketKey) ?? [];
     group.push(finding);
-    groups.set(finding.reserveKey, group);
+    groups.set(marketKey, group);
   }
   return Promise.all(
     Array.from(groups.values(), async (hits) => {
@@ -309,12 +310,13 @@ export async function renderNotifications(
       );
       return {
         level: warning ? "warning" : "info",
-        title: await render(
-          "Aave V3 {{finding.marketName}} / {{finding.assetName}} 指标提醒",
-          { finding: hits[0] },
-        ),
+        title: await render("Aave V3 {{finding.marketName}} 指标提醒", {
+          finding: hits[0],
+        }),
         description: await render(NOTIFICATION_TEMPLATE, {
-          findings: hits,
+          reserves: Object.values(
+            Object.groupBy(hits, (hit) => hit.reserveKey),
+          ),
         }),
       };
     }),
@@ -322,7 +324,12 @@ export async function renderNotifications(
 }
 
 const NOTIFICATION_TEMPLATE = `
-{{#each findings}}
+{{#each reserves}}
+资产：{{this.[0].assetName}}
+
+{{#each this}}
 - {{metric}} ({{direction}}): {{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}; 阈值 {{thresholdBps}} bps。
+{{/each}}
+
 {{/each}}
 `;
