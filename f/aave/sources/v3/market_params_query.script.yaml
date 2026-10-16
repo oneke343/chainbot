@@ -11,9 +11,11 @@ schema:
       format: resource-graphql
     chain_ids:
       type: array
+      default: null
       items:
         type: integer
       minItems: 1
+      originalType: record[]
   required:
     - api
     - chain_ids
