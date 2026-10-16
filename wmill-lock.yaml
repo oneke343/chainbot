@@ -6,7 +6,7 @@ locks:
   f/aave/lib/v3-types: 2ad1f7f25ecd779c214c005851315bde920753c359bc90dad1cac35e6ba66b49
   f/aave/lib/v4-types: 167fe4636969b371e595278d5bcd9020ce581033b6423a6b349886956b074bcf
   f/aave/rules/aave_v3_hf: 7ab2f65150247f7010169d4c556982edc91ca845f29e84a6ce751a456225afb3
-  f/aave/rules/aave_v3_market_risk: 53e8eb1ea3863de9d391258e88fea7964508f27484026b961d9232c4a15666e2
+  f/aave/rules/aave_v3_market_risk: 12040bac3f94d57407fa240bd720ac1c0311b033fc10e588a0472920c7914297
   f/aave/rules/aave_v4_hf: ac8307cfbfe697c05b3a63069d851c493e95e8c9d22fc354504e334dad153e22
   f/aave/sources/v3/chains: f8f4bd9836e8adb534848493a333e4b751e80e48bcdadd23297ca3824b2f13c0
   f/aave/sources/v3/market_metrics: 05b5569197a2227f873951c660f82c70456e6b97860b193b0bcb30df530e9e3b
@@ -34,7 +34,7 @@ locks:
   f/chain_sentinel/scripts/destinations/send_flashduty: 6a5e0f64e3f361ec6277c76e612b8bbce5cf559572d76fb1ff2977825ae6fb4f
   f/chain_sentinel/sources/history: 2d5e1593d5f9c65b2b300752c6b0736d4a922c3c75dc13631902a69f1d2a16c6
   f/chain_sentinel/sources/previous: 6b21f7aabc79de34aca00971fec16eecd2b11b90861f363e7c8f2c0c3ee9b98b
-  f/handlebars/render: c4cd313075ebba8452f0eb6b6aa023bf3e4b4c7f74cca7d9e42cb3d8373dbf73
+  f/handlebars/render: 3c836d00213dad010ce8bf59ea5da0afbd078fb10aace416098b81b24c838359
   f/morpho/lib/types: 6351dcbf104aed4e1712f3b71a81faa3cf6bba08cccc018622a3137c261ffa79
   f/morpho/rules/hf: 575302611f001c1f864e3b872e53ab935a91a8872322dd10e6003059bce46b57
   f/morpho/sources/types: 970f0627ca1b0cf8e38a2cfe13afecd74765800c83bb239be9d072dd2b26807d

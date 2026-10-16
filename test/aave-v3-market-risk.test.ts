@@ -301,6 +301,8 @@ test("notifications round long decimals while findings retain their original val
   current.borrow!.availableLiquidity = decimal("800000098765431", 9);
   current.borrow!.apy = decimal("7006912", 8);
   current.borrow!.utilizationRate = decimal("9123456789", 10);
+  current.totalSupply = decimal("123456", 15);
+  current.supplyCap = decimal(0);
   const findings = await main(snapshot(15, current), [snapshot(0, before)]);
   const original = structuredClone(findings);
   const [message] = await renderNotifications(findings);
@@ -315,6 +317,8 @@ test("notifications round long decimals while findings retain their original val
   assert.match(message.description, /liquidity: 800,000\.0988/);
   assert.match(message.description, /utilization: 91\.23%/);
   assert.match(message.description, /borrow_apy: 7\.01%/);
+  assert.match(message.description, /supply_total: 1\.23e-10/);
+  assert.match(message.description, /supply_cap: 0\n/);
   assert.deepEqual(findings, original);
   assert.equal(findings[0].currentValues.liquidity, "800000.098765431");
 });

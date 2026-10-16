@@ -35,23 +35,3 @@ test("missing fields and malformed templates fail explicitly", async () => {
   await assert.rejects(render("{{missing}}", {}), /not defined/);
   await assert.rejects(render("{{#each patch}}", { patch: [] }), /Parse error/);
 });
-
-test("numeric helpers group amounts and distinguish percentages from percentage points", async () => {
-  const context = {
-    amount: "1234567.890123456789",
-    rate: "0.07006912",
-    change: "0.02005678",
-    tiny: "0.000000000123456",
-    zero: "0",
-    negative: "-0.20000123",
-  };
-  const before = structuredClone(context);
-  assert.equal(
-    await render(
-      "{{number amount}} | {{percent rate}} | {{pp change}} | {{number tiny}} | {{number zero}} | {{percent negative}}",
-      context,
-    ),
-    "1,234,567.8901 | 7.01% | 2.01 pp | 1.23e-10 | 0 | -20%",
-  );
-  assert.deepEqual(context, before);
-});
