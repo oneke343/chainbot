@@ -115,7 +115,8 @@ config:
       utilizationBufferBps: 100
 ```
 
-同一 Reserve 的触发项合并成一条通知，使用 reserveKey 标识链、市场和资产。
+同一 Reserve 的触发项合并成一条通知。findings 自带 marketName 和 assetName（底层 token 全名），
+标题和描述展示市场与资产名称，reserveKey 用于内部区分和分组。
 `renderNotifications(findings)` 通过共享 `f/handlebars/render` 直接遍历 findings，
 展示 metric、方向、前后值、变化和 bps 阈值。比率保留 1=100% 的原始口径，通知附带单位说明。
 Cap 使用率用各自资产单位的总量除以 Cap，不等同于链上交易容量的精确预检。

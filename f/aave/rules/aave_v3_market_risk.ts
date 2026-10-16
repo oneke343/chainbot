@@ -59,6 +59,8 @@ interface MetricFinding {
 
 export interface Finding extends MetricFinding {
   reserveKey: ReserveKey;
+  marketName: string;
+  assetName: string;
 }
 
 export interface ReserveWindow {
@@ -305,7 +307,14 @@ export async function main(
     });
     if (window.continuous && samples.length === window.samples.length)
       hits.push(...evaluateUtilization(samples, thresholds));
-    findings.push(...hits.map((hit) => ({ ...hit, reserveKey: key })));
+    findings.push(
+      ...hits.map((hit) => ({
+        ...hit,
+        reserveKey: key,
+        marketName: reserve.marketName,
+        assetName: reserve.assetName,
+      })),
+    );
   }
   return findings;
 }
@@ -326,7 +335,7 @@ export async function renderNotifications(
     groups.set(finding.reserveKey, group);
   }
   return Promise.all(
-    Array.from(groups, async ([key, hits]) => {
+    Array.from(groups.values(), async (hits) => {
       const warning = hits.some(
         (hit) =>
           !hit.metric.endsWith("cap_usage") &&
@@ -334,9 +343,11 @@ export async function renderNotifications(
       );
       return {
         level: warning ? "warning" : "info",
-        title: "Aave V3 Reserve 指标提醒",
+        title: await render(
+          "Aave V3 {{finding.marketName}} / {{finding.assetName}} 指标提醒",
+          { finding: hits[0] },
+        ),
         description: await render(NOTIFICATION_TEMPLATE, {
-          reserveKey: key,
           findings: hits,
         }),
       };
@@ -344,7 +355,10 @@ export async function renderNotifications(
   );
 }
 
-const NOTIFICATION_TEMPLATE = `Reserve：{{reserveKey}}
+const NOTIFICATION_TEMPLATE = `{{#with findings.[0]}}
+市场：{{marketName}}
+资产：{{assetName}}
+{{/with}}
 
 {{#each findings}}
 - {{metric}} ({{direction}})：{{#if before}}{{before}} → {{/if}}{{current}}{{#if change}}；变化 {{change}}{{/if}}；阈值 {{thresholdBps}} bps。
