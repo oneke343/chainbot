@@ -58,24 +58,6 @@ function market(chainId = 1): Market {
         },
       },
     ],
-    eModeCategories: [
-      {
-        id: 1,
-        label: "Stablecoins",
-        maxLTV: percent("9000"),
-        liquidationThreshold: percent("9300"),
-        liquidationPenalty: percent("100"),
-        isolated: false,
-        reserves: [
-          {
-            underlyingToken: { address: asset },
-            canBeCollateral: true,
-            canBeBorrowed: true,
-            hasLtvZero: false,
-          },
-        ],
-      },
-    ],
   };
 }
 
@@ -143,26 +125,46 @@ test("Source discovers chains then dispatches one configuration query for all ma
   assert.deepEqual(completed_steps, checkpoint);
 });
 
-test("market, reserve and eMode order, address casing and decimal precision do not produce changes", async (t) => {
+test("eMode categories are excluded from market snapshots and configuration diffs", async (t) => {
+  t.after(() => wmill.setWorkflowCtx(null));
+  const initial = {
+    ...market(),
+    eModeCategories: [
+      {
+        id: 1,
+        label: "Stablecoins",
+        maxLTV: percent("9000"),
+        liquidationThreshold: percent("9300"),
+        liquidationPenalty: percent("100"),
+        isolated: false,
+        reserves: [
+          {
+            underlyingToken: { address: asset },
+            canBeCollateral: true,
+            canBeBorrowed: true,
+            hasLtvZero: false,
+          },
+        ],
+      },
+    ],
+  };
+  const before = await collect([initial]);
+  assert.deepEqual(Object.keys(before["1"][pool]), ["name", "reserves"]);
+  initial.eModeCategories[0].isolated = true;
+  initial.eModeCategories[0].reserves[0].hasLtvZero = true;
+  assert.deepEqual(jsondiff(before, await collect([initial])), []);
+});
+
+test("market and reserve order, address casing and decimal precision do not produce changes", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const original = market();
   const secondReserve = structuredClone(original.reserves[0]);
   secondReserve.underlyingToken.address = address;
   original.reserves.push(secondReserve);
-  const secondCategory = structuredClone(original.eModeCategories[0]);
-  secondCategory.id = 2;
-  original.eModeCategories.push(secondCategory);
-  original.eModeCategories[0].reserves.push({
-    underlyingToken: { address },
-    canBeBorrowed: false,
-    canBeCollateral: true,
-    hasLtvZero: true,
-  });
   const before = await collect([original, market(8453)]);
   const reordered = structuredClone(original);
   reordered.address = reordered.address.toUpperCase();
   reordered.reserves.reverse();
-  reordered.eModeCategories.reverse();
   for (const reserve of reordered.reserves) {
     reserve.underlyingToken.address =
       reserve.underlyingToken.address.toUpperCase();
@@ -173,19 +175,13 @@ test("market, reserve and eMode order, address casing and decimal precision do n
       reserve.interestRateStrategyAddress.toUpperCase();
     reserve.supplyInfo.maxLTV = percent("80000", 5);
   }
-  for (const category of reordered.eModeCategories) {
-    category.reserves.reverse();
-    for (const reserve of category.reserves)
-      reserve.underlyingToken.address =
-        reserve.underlyingToken.address.toUpperCase();
-  }
   assert.deepEqual(
     jsondiff(before, await collect([market(8453), reordered])),
     [],
   );
 });
 
-test("snapshots retain nullable configuration and expose precise risk, rate and eMode diffs", async (t) => {
+test("snapshots retain nullable configuration and expose precise risk and rate diffs", async (t) => {
   t.after(() => wmill.setWorkflowCtx(null));
   const initial = market();
   initial.reserves[0].borrowInfo = null;
@@ -199,10 +195,8 @@ test("snapshots retain nullable configuration and expose precise risk, rate and 
   changed.reserves[0].supplyInfo.maxLTV = percent("7500");
   changed.reserves[0].supplyInfo.supplyCap = amount("1000000000");
   changed.reserves[0].borrowInfo!.variableRateSlope1 = percent("500");
-  changed.eModeCategories[0].isolated = true;
-  changed.eModeCategories[0].reserves[0].hasLtvZero = true;
   const patch = jsondiff(before, await collect([changed]));
-  assert.equal(patch.length, 5);
+  assert.equal(patch.length, 3);
   assert.ok(
     patch.some(
       (change) =>
@@ -225,18 +219,10 @@ test("snapshots retain nullable configuration and expose precise risk, rate and 
   assert.ok(
     patch.some(
       (change) =>
-        change.path === `/1/${pool}/eModeCategories/1/isolated` &&
+        change.path === `/1/${pool}/reserves/${asset}/supplyInfo/supplyCap` &&
         change.op === "replace" &&
-        change.oldValue === false &&
-        change.value === true,
-    ),
-  );
-  assert.ok(
-    patch.some(
-      (change) =>
-        change.path.endsWith(`/reserves/${asset}/hasLtvZero`) &&
-        change.op === "replace" &&
-        change.value === true,
+        change.oldValue === "900719925474099312.345678" &&
+        change.value === "1000",
     ),
   );
 });

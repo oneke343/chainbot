@@ -6,7 +6,7 @@
 
 ## 目标与调用方式
 
-每三分钟采样官方 V3 GraphQL 支持的主网市场，比较常用风险参数、利率曲线、eMode 与操作开关，有变化时通过现有 notification Flow 通知。记录的是 API 采样变化，不声称捕捉每笔治理修改，也不填入推测的链上交易或执行时间。
+每三分钟采样官方 V3 GraphQL 支持的主网市场，比较常用风险参数、利率曲线与操作开关，有变化时通过现有 notification Flow 通知。记录的是 API 采样变化，不声称捕捉每笔治理修改，也不填入推测的链上交易或执行时间。
 
 正常调用只运行无参数监控入口。API Resource 绑定在无参数 Source Flow 中，与 V4 相同；无需给监控入口传入 API、网络、历史值或通知参数。
 
@@ -55,7 +55,7 @@ V4 的数据源为 GraphQL 发现 Hub 后通过 RPC Reader 采集。V3 本期只
 
 复用现有 `f/aave/sources/v3/chains.gql` 的 `MAINNET_ONLY` 查询；网络发现结果沿用 V3 仓位 Source 的一天任务缓存。配置查询不启用任务结果缓存。
 
-`markets(request: { chainIds: $chain_ids })` 本身支持多个链 ID。发现主网后，将全部 ID 一次传入配置查询，再按每个 market 返回的 `chain.chainId` 分组。每个市场请求 `reserves(request: { reserveType: BOTH })`。不传 `user`，不采用 SDK 默认 fragment，也不按 SUPPLY / BORROW 分别查询后合并。这样可以显式选取 `isolated`、`hasLtvZero`，并避免重复读取同一资产。
+`markets(request: { chainIds: $chain_ids })` 本身支持多个链 ID。发现主网后，将全部 ID 一次传入配置查询，再按每个 market 返回的 `chain.chainId` 分组。每个市场请求 `reserves(request: { reserveType: BOTH })`。不传 `user`，不采用 SDK 默认 fragment，也不按 SUPPLY / BORROW 分别查询后合并。避免重复读取同一资产。
 
 首版只执行一个全链配置查询子任务，不按链创建并行任务。配置查询超时建议 60 秒，Source 总超时 180 秒。请求失败或返回 GraphQL errors 则整轮失败。只有实际观测到响应体积、查询复杂度或超时限制后，再考虑分批；目前不增加批处理或逐链重试逻辑。一次跨链 API 请求也不代表所有字段来自同一区块或同一时刻。
 
@@ -74,14 +74,12 @@ V4 的数据源为 GraphQL 发现 Hub 后通过 RPC Reader 采集。V3 本期只
 | `supplyInfo` | `maxLTV`、`liquidationThreshold`、`liquidationBonus`、`canBeCollateral`、`supplyCap` |
 | `borrowInfo` | `reserveFactor`、`borrowCap`、`borrowingState`、`baseVariableBorrowRate`、`variableRateSlope1`、`variableRateSlope2`、`optimalUsageRate` |
 | `isolationModeConfig` | 旧版兼容的 `canBeCollateral`、`canBeBorrowed`、`debtCeilingDecimals`；`debtCeiling` 读取 `debtCeiling.usd` 并以整数分归一化，保留可空语义；不读取 token 换算数量及 `totalBorrows` |
-| eMode category | category ID 作为索引；`label`、`maxLTV`、`liquidationThreshold`、`liquidationPenalty`、`isolated` |
-| category 资产关系 | underlying 地址作为索引；`canBeCollateral`、`canBeBorrowed`、`hasLtvZero` |
 
-不重复保存 reserve 的 `eModeInfo[]`，关系由 category 的资产集合统一表达。否则同一参数可能在两个位置产生重复告警。
+不采集 `eModeCategories` 或 reserve 的 `eModeInfo[]`，eMode 配置不纳入此快照。
 
 不采集 APY、利用率、余额、USD 汇率、USD cap 估值、size、total、available liquidity、capReached、用户状态、奖励和采集时间。这些值不属于本期配置 diff。市场名、symbol 和 token decimals 是有意保留的身份元数据，其修改也会作为 API 数据变化通知。
 
-公开 schema 依据：[Reserve 与利率](https://github.com/aave/aave-sdk/blob/801260c39921177c56f62d1f1e0d51971e9fd4bc/packages/graphql/schema.graphql#L1262-L1486)、[eMode](https://github.com/aave/aave-sdk/blob/801260c39921177c56f62d1f1e0d51971e9fd4bc/packages/graphql/schema.graphql#L267-L328)。接入时用线上 schema 执行 Codegen，验证实际字段兼容性；当前环境尚未完成线上端点调用验证。
+公开 schema 依据：[Reserve 与利率](https://github.com/aave/aave-sdk/blob/801260c39921177c56f62d1f1e0d51971e9fd4bc/packages/graphql/schema.graphql#L1262-L1486)。接入时用线上 schema 执行 Codegen，验证实际字段兼容性；当前环境尚未完成线上端点调用验证。
 
 ## 4. 快照契约
 
@@ -91,7 +89,6 @@ Snapshot = chainId → poolAddress → MarketConfiguration
 MarketConfiguration
   name
   reserves: underlyingAddress → ReserveConfiguration
-  eModeCategories: categoryId → EModeCategoryConfiguration
 
 ReserveConfiguration
   symbol, decimals, aToken, vToken
@@ -100,15 +97,11 @@ ReserveConfiguration
   supplyInfo: 白名单参数
   borrowInfo: null 或白名单参数
   isolationModeConfig: null 或旧隔离模式配置
-
-EModeCategoryConfiguration
-  label, maxLTV, liquidationThreshold, liquidationPenalty, isolated
-  reserves: underlyingAddress → { canBeCollateral, canBeBorrowed, hasLtvZero }
 ```
 
 集合使用对象而不是数组。这是针对现有通用 diff 按数组下标比较的必要适配，不新增专用 diff 算法。
 
-身份规范如下：chain ID 和 category ID 使用十进制字符串键；地址统一小写，包括关联地址字段。信任 API 的身份及唯一性约定，直接通过 `Object.fromEntries` 建立索引，不增加地址或重复项检查。
+身份规范如下：chain ID 使用十进制字符串键；地址统一小写，包括关联地址字段。信任 API 的身份及唯一性约定，直接通过 `Object.fromEntries` 建立索引，不增加地址或重复项检查。
 
 查询 PercentValue 时选取 `raw` 与 `decimals`，通过现有 viem 的 `formatUnits(BigInt(raw), decimals)` 无损转换成规范十进制字符串；金额使用 `TokenAmount.amount.raw/decimals`，转换成 token 数量字符串。不使用浮点 `Number`，不使用 `formatted` 或 `usd`。
 
@@ -164,17 +157,17 @@ Windmill 原生 GraphQL runner 对 errors 与 data 并存响应的线上行为�
 
 ## 8. 实施与验证
 
-1. 新增配置查询和其 Windmill 元数据；执行现有 Codegen，确认新版 eMode、利率及旧兼容字段受线上 schema 支持。
+1. 新增配置查询和其 Windmill 元数据；执行现有 Codegen，确认利率及旧兼容字段受线上 schema 支持。
 2. 实现采集 WAC 内的无损数值投影和按身份索引；新增 Source Flow，绑定现有 V3 Resource。
 3. 实现 Monitor，复用历史、diff、渲染和 notification；历史读取指向 Source Flow，保持 V4 的返回行为。先不启用 schedule。
 4. 完成隔离只读采集预览及本地测试后，再按用户授权部署并启用调度。实体路径和元数据处理遵守 AGENTS.wmill.md，不绕过 git push 部署流程。
 
 测试至少覆盖：
 
-- 资产、市场及 eMode 返回顺序不同，diff 为空；地址仅大小写变化，diff 为空。
+- 资产、市场返回顺序不同，diff 为空；地址仅大小写变化，diff 为空。
 - 同一 symbol 的不同资产和相同地址跨链都不冲突，按实际身份索引。
-- 修改 LTV、cap、利率 slope、isolated、hasLtvZero，得到准确字段 old/new。
-- APY、余额、USD 价格变化不进入快照；数值超过安全整数范围仍无精度损失。
+- 修改 LTV、cap、利率 slope，得到准确字段 old/new。
+- eMode categories、APY、余额、USD 价格变化不进入快照；数值超过安全整数范围仍无精度损失。
 - 相同比例或金额的不同文本精度表示不误报；零、null、缺失分别处理。
 - 配置查询只有一个子任务，变量包含全部主网 ID；响应按真实 chain ID 分组，不依赖返回顺序。
 - 网络发现和全链查询任务失败直接传播，不返回部分快照。
