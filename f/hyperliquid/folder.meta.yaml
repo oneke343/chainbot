@@ -1,6 +1,8 @@
 summary: Hyperliquid account positions and liquidation risk
 display_name: hyperliquid
-owners:
-  - u/oneke
 extra_perms:
   u/oneke: true
+  u/oneke343: true
+owners:
+  - u/oneke
+  - u/oneke343

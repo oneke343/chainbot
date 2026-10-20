@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "windmill-client": "1.800.0"
+    "windmill-client": "latest"
   }
 }
 //bun.lock
@@ -10,11 +10,11 @@
   "workspaces": {
     "": {
       "dependencies": {
-        "windmill-client": "1.800.0",
+        "windmill-client": "latest",
       },
     },
   },
   "packages": {
-    "windmill-client": ["windmill-client@1.800.0", "", {}, "sha512-H4B4S5PNxVFBNzJ3H8wkAcmpMKOpyvjlq3tQBzzPH8XqY90kThBY1XlR+HwWmen7pTHpM3HJq/NexNg3wuCjWQ=="],
+    "windmill-client": ["windmill-client@1.841.0", "", {}, "sha512-YlxhHDk13R/8DeDC3BKrAlmEkBD5acQl8t0tZ6m3GubZsPlvZHof2IITzv0zRWvaZ1j2LJo1PaGTairy7CZ2vw=="],
   }
 }

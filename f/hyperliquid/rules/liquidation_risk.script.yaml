@@ -10,31 +10,38 @@ schema:
     config:
       type: object
       additionalProperties: false
+      default: null
+      format: resource-config
       properties:
         maxMarginRiskRatio:
           type: string
           description: Positive fraction below 1. Maintenance-to-equity ratio at or above
             this value breaches.
+          originalType: string
           pattern: ^0\.\d+$
         maxSnapshotAgeMs:
-          type: integer
+          type: number
           minimum: 1
         minLiquidationDistance:
           type: string
           description: Positive fraction below 1. Distance at or below this value breaches.
+          originalType: string
           pattern: ^0\.\d+$
       required:
         - minLiquidationDistance
         - maxMarginRiskRatio
         - maxSnapshotAgeMs
     evaluatedAt:
-      type: integer
+      type: number
       description: Explicit evaluation time in Unix milliseconds.
+      default: null
       minimum: 0
     snapshot:
       type: object
       additionalProperties: true
       description: Complete Snapshot returned by f/hyperliquid/sources/account_positions.
+      default: null
+      format: resource-snapshot
   required:
     - snapshot
     - config

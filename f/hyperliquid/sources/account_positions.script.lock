@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "@nktkas/hyperliquid": "0.33.3"
+    "@nktkas/hyperliquid": "latest"
   }
 }
 //bun.lock
@@ -10,7 +10,7 @@
   "workspaces": {
     "": {
       "dependencies": {
-        "@nktkas/hyperliquid": "0.33.3",
+        "@nktkas/hyperliquid": "latest",
       },
     },
   },
