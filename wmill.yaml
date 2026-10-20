@@ -4,6 +4,7 @@ includes:
   - f/aave/**
   - f/binance/**
   - f/okx/**
+  - f/hyperliquid/**
   - f/morpho/**
   - f/spark/** # Retain sync scope until remote deletion is deployed.
   - f/chain_sentinel/**
