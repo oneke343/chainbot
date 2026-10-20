@@ -13,6 +13,7 @@ Source 采集事实，Rule 判断阈值并生成消息，用户目录中的 Moni
 | `u/oneke/monitors/morpho_hf_alert` | Morpho 借款仓位 HF |
 | `u/oneke/monitors/binance_vip_hf_alert` | Binance VIP Loan HF，按 collateralAccountId 配置阈值 |
 | `u/oneke/monitors/okx_loan_hf_alert` | OKX Flexible Loan HF |
+| `u/oneke/monitors/hyperliquid_liquidation_risk` | Hyperliquid 全仓／逐仓清算距离和保证金池风险（定时模板默认关闭） |
 | `u/oneke/monitors/aave_v4_configuration_change` | Aave V4 配置快照变更 |
 
 HF Rule 返回 `{level, title, description}` 或 `null`，Monitor 仅通知非空结果。
@@ -20,6 +21,9 @@ HF 持续低于阈值时，每次定时运行都会告警。各 Monitor 的 `.sc
 
 协议接口、输入与阈值配置见 [Aave](f/aave/README.md)、[Morpho](f/morpho/README.md)、
 [Binance](f/binance/README.md) 和 [OKX](f/okx/README.md)。
+
+[Hyperliquid](f/hyperliquid/README.md) 提供账户全部永续仓位 Source 与清算风险 Rule，
+覆盖全仓、逐仓和 HIP-3 DEX；Monitor 将触线及无法判断的结果交给现有通知渠道。
 
 ## 配置变更与通知
 

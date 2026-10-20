@@ -1,0 +1,41 @@
+summary: Evaluate Hyperliquid position liquidation distance and shared margin risk
+description: Pure rule returning breach, clear or unknown per position and
+  margin pool. No notifications or persisted state.
+lock: '!inline f/hyperliquid/rules/liquidation_risk.script.lock'
+kind: script
+schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  properties:
+    config:
+      type: object
+      additionalProperties: false
+      properties:
+        maxMarginRiskRatio:
+          type: string
+          description: Positive fraction below 1. Maintenance-to-equity ratio at or above
+            this value breaches.
+          pattern: ^0\.\d+$
+        maxSnapshotAgeMs:
+          type: integer
+          minimum: 1
+        minLiquidationDistance:
+          type: string
+          description: Positive fraction below 1. Distance at or below this value breaches.
+          pattern: ^0\.\d+$
+      required:
+        - minLiquidationDistance
+        - maxMarginRiskRatio
+        - maxSnapshotAgeMs
+    evaluatedAt:
+      type: integer
+      description: Explicit evaluation time in Unix milliseconds.
+      minimum: 0
+    snapshot:
+      type: object
+      additionalProperties: true
+      description: Complete Snapshot returned by f/hyperliquid/sources/account_positions.
+  required:
+    - snapshot
+    - config
+    - evaluatedAt
