@@ -52,13 +52,13 @@ WAC 将非空消息交给 `u/oneke/channels/notification`，发送 Telegram 和 
 再通过 `market_params_query.gql` 一次查询全部主网的配置，不缓存配置查询。
 查询类型通过现有 Codegen 生成，不使用 SDK 默认 fragment。
 
-快照结构为 `chainId → poolAddress → { name, reserves, eModeCategories }`。
-资产和 eMode 集合按地址、类别 ID 索引，地址统一小写；比例和 cap 用 `raw + decimals`
+快照结构为 `chainId → poolAddress → { name, reserves }`。
+资产集合按地址索引，地址统一小写；比例和 cap 用 `raw + decimals`
 无损转换为十进制字符串。保留 `borrowInfo`、旧隔离模式配置的 null。
 隔离模式的 `debtCeiling` 读取 GraphQL `debtCeiling.usd`，以整数分四舍五入后保存为规范十进制字符串。
 不比较随价格变化的 token 换算数量；价格变化和分以下的换算误差不触发额度告警。
 字段名沿用 `debtCeiling`，值的单位改为 USD；首次与旧版 Source 快照比较可能产生一次单位切换的数值变更通知。
-不采集价格、APY、余额、利用率、奖励和采样时间，不额外验证 API 类型或添加兜底。
+不采集 eMode categories、价格、APY、余额、利用率、奖励和采样时间，不额外验证 API 类型或添加兜底。
 GraphQL 任务失败直接传播，Source 不返回部分快照。
 
 `u/oneke/monitors/aave_v3_configuration_change` 与 V4 一样，先读取最近成功 Source job，

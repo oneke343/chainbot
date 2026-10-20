@@ -81,30 +81,5 @@ query AaveV3MarketParams($chain_ids: [ChainId!]!) {
         debtCeilingDecimals
       }
     }
-    eModeCategories {
-      id
-      label
-      maxLTV {
-        raw
-        decimals
-      }
-      liquidationThreshold {
-        raw
-        decimals
-      }
-      liquidationPenalty {
-        raw
-        decimals
-      }
-      isolated
-      reserves {
-        underlyingToken {
-          address
-        }
-        canBeCollateral
-        canBeBorrowed
-        hasLtvZero
-      }
-    }
   }
 }

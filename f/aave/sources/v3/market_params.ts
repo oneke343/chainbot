@@ -15,7 +15,6 @@ const queryMarketParams = taskScript("f/aave/sources/v3/market_params_query", {
 
 type Market = AaveV3MarketParamsQuery["markets"][number];
 type Reserve = Market["reserves"][number];
-type EModeCategory = Market["eModeCategories"][number];
 type Decimal = Reserve["supplyInfo"]["maxLTV"];
 
 function decimal(value: Decimal): string {
@@ -69,26 +68,6 @@ function reserveConfiguration(reserve: Reserve) {
   };
 }
 
-function eModeConfiguration(category: EModeCategory) {
-  return {
-    label: category.label,
-    maxLTV: decimal(category.maxLTV),
-    liquidationThreshold: decimal(category.liquidationThreshold),
-    liquidationPenalty: decimal(category.liquidationPenalty),
-    isolated: category.isolated,
-    reserves: Object.fromEntries(
-      category.reserves.map((reserve) => [
-        reserve.underlyingToken.address.toLowerCase(),
-        {
-          canBeCollateral: reserve.canBeCollateral,
-          canBeBorrowed: reserve.canBeBorrowed,
-          hasLtvZero: reserve.hasLtvZero,
-        },
-      ]),
-    ),
-  };
-}
-
 function marketConfiguration(market: Market) {
   return {
     name: market.name,
@@ -96,12 +75,6 @@ function marketConfiguration(market: Market) {
       market.reserves.map((reserve) => [
         reserve.underlyingToken.address.toLowerCase(),
         reserveConfiguration(reserve),
-      ]),
-    ),
-    eModeCategories: Object.fromEntries(
-      market.eModeCategories.map((category) => [
-        String(category.id),
-        eModeConfiguration(category),
       ]),
     ),
   };
