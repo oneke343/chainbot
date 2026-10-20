@@ -1,17 +1,17 @@
-summary: Check Hyperliquid liquidation risk every 30 seconds
-description: Disabled template. Replace the placeholder address and choose risk thresholds before enabling.
+summary: Check Hyperliquid liquidation risk every minute
+description: Monitor the configured Hyperliquid account every minute.
 args:
-  address: '0x0000000000000000000000000000000000000000'
+  address: '0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3'
   network: mainnet
   config:
     minLiquidationDistance: '0.05'
     maxMarginRiskRatio: '0.8'
     maxSnapshotAgeMs: 60000
 cron_version: v2
-enabled: false
+enabled: true
 is_flow: false
 no_flow_overlap: true
-schedule: '0,30 * * * * *'
+schedule: '0 * * * * *'
 script_path: u/oneke/monitors/hyperliquid_liquidation_risk
 timezone: Etc/UTC
 ws_error_handler_muted: false
